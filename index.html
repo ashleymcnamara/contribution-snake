@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Snake</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    .game-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .header svg {
+      width: 32px;
+      height: 32px;
+      fill: #e6edf3;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .stats-bar {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      font-size: 14px;
+      color: #8b949e;
+      width: 100%;
+      padding: 0 4px;
+    }
+
+    .stats-bar .stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .stats-bar .stat-value {
+      color: #e6edf3;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .contribution-label {
+      font-size: 12px;
+      color: #8b949e;
+      align-self: flex-start;
+      padding-left: 4px;
+    }
+
+    .canvas-wrapper {
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      overflow: hidden;
+      background: #161b22;
+      box-shadow: 0 0 0 1px rgba(240, 246, 252, 0.04);
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .legend {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      align-self: flex-end;
+      font-size: 11px;
+      color: #8b949e;
+    }
+
+    .legend-square {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    .controls-hint {
+      font-size: 12px;
+      color: #484f58;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    .controls-hint kbd {
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: inherit;
+      font-size: 11px;
+      color: #8b949e;
+    }
+
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: rgba(13, 17, 23, 0.85);
+      z-index: 10;
+    }
+
+    .overlay-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: #e6edf3;
+    }
+
+    .overlay-sub {
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    .btn {
+      background: #238636;
+      color: #fff;
+      border: 1px solid rgba(240, 246, 252, 0.1);
+      border-radius: 6px;
+      padding: 8px 20px;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn:hover { background: #2ea043; }
+    .btn:focus-visible {
+      outline: 2px solid #58a6ff;
+      outline-offset: 2px;
+    }
+
+    .game-over-stats {
+      font-size: 13px;
+      color: #8b949e;
+      text-align: center;
+      line-height: 1.8;
+    }
+
+    .game-over-stats strong {
+      color: #39d353;
+    }
+
+    /* Mobile touch controls */
+    .touch-controls {
+      display: none;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .touch-btn {
+      width: 56px;
+      height: 56px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #8b949e;
+      font-size: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
+    }
+
+    .touch-btn:active { background: #30363d; }
+
+    .touch-row {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+    }
+
+    @media (pointer: coarse) {
+      .touch-controls { display: grid; }
+      .controls-hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <div class="header">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
+      </svg>
+      <h1>Snake</h1>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat">
+        <span>Contributions:</span>
+        <span class="stat-value" id="score">0</span>
+      </div>
+      <div class="stat">
+        <span>Streak:</span>
+        <span class="stat-value" id="streak">0 days</span>
+      </div>
+      <div class="stat">
+        <span>Level:</span>
+        <span class="stat-value" id="level">1</span>
+      </div>
+    </div>
+
+    <div class="contribution-label">Snake graph</div>
+
+    <div class="canvas-wrapper" style="position: relative;">
+      <canvas id="game"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="overlay-title" id="overlay-title">GitHub Snake</div>
+        <div class="overlay-sub" id="overlay-sub">Eat commits. Grow your streak.</div>
+        <button class="btn" id="overlay-btn" autofocus>Start contributing</button>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span>Less</span>
+      <div class="legend-square" style="background:#161b22;border:1px solid #30363d;"></div>
+      <div class="legend-square" style="background:#0e4429;"></div>
+      <div class="legend-square" style="background:#006d32;"></div>
+      <div class="legend-square" style="background:#26a641;"></div>
+      <div class="legend-square" style="background:#39d353;"></div>
+      <span>More</span>
+    </div>
+
+    <div class="controls-hint">
+      <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move · <kbd>Space</kbd> to pause
+    </div>
+
+    <div class="touch-controls" id="touch-controls">
+      <div class="touch-row">
+        <div class="touch-btn" style="visibility:hidden"></div>
+        <div class="touch-btn" data-dir="up">▲</div>
+        <div class="touch-btn" style="visibility:hidden"></div>
+      </div>
+      <div class="touch-row">
+        <div class="touch-btn" data-dir="left">◀</div>
+        <div class="touch-btn" data-dir="down">▼</div>
+        <div class="touch-btn" data-dir="right">▶</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    // Grid config — contribution graph style
+    const CELL = 14;
+    const GAP = 3;
+    const STEP = CELL + GAP;
+    const LABEL_LEFT = 32;  // space for day labels
+    const LABEL_TOP = 18;   // space for month labels
+    const GRID_COLS = 36;
+    const GRID_ROWS = 22;
+    canvas.width = LABEL_LEFT + GRID_COLS * STEP + GAP + 8;
+    canvas.height = LABEL_TOP + GRID_ROWS * STEP + GAP + 8;
+    const COLS = GRID_COLS;
+    const ROWS = GRID_ROWS;
+    const OFFSET_X = LABEL_LEFT + 4;
+    const OFFSET_Y = LABEL_TOP + 4;
+
+    // Update overlay size to match canvas
+    const overlay = document.getElementById('overlay');
+
+    // GitHub contribution colors
+    const COLORS = {
+      empty: '#161b22',
+      emptyBorder: 'rgba(255,255,255,0.04)',
+      border: '#30363d',
+      levels: ['#0e4429', '#006d32', '#26a641', '#39d353'],
+      food: '#39d353',
+      foodGlow: 'rgba(57, 211, 83, 0.35)',
+      head: '#39d353',
+      eyes: '#0d1117',
+      death: '#da3633',
+      deathDark: '#8b2c2a',
+    };
+
+    // Day / month labels
+    const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''];
+    const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    // Game state
+    let snake, direction, nextDirection, food, score, highScore, streak;
+    let speed, level, gameLoop, state, lastTime, accumulator;
+    let foodPulse = 0;
+    let streakMultiplier = 1;
+    let lastFoodTime = 0;
+
+    // Visual effects
+    let particles = [];
+    let floatingTexts = [];
+    let deathFlashTimer = 0;
+    let deathSnakeSnapshot = null;
+
+    highScore = parseInt(localStorage.getItem('gh-snake-high') || '0');
+
+    function init() {
+      const startX = Math.floor(COLS / 2);
+      const startY = Math.floor(ROWS / 2);
+      snake = [];
+      for (let i = 0; i <= 4; i++) {
+        snake.push({ x: startX - i, y: startY });
+      }
+      direction = { x: 1, y: 0 };
+      nextDirection = { x: 1, y: 0 };
+      score = 0;
+      streak = 0;
+      streakMultiplier = 1;
+      speed = 120;
+      level = 1;
+      accumulator = 0;
+      lastTime = performance.now();
+      lastFoodTime = Date.now();
+      particles = [];
+      floatingTexts = [];
+      deathFlashTimer = 0;
+      deathSnakeSnapshot = null;
+      placeFood();
+      updateUI();
+    }
+
+    function placeFood() {
+      const occupied = new Set(snake.map(s => `${s.x},${s.y}`));
+      let pos;
+      do {
+        pos = {
+          x: Math.floor(Math.random() * COLS),
+          y: Math.floor(Math.random() * ROWS),
+        };
+      } while (occupied.has(`${pos.x},${pos.y}`));
+      food = pos;
+    }
+
+    function updateUI() {
+      document.getElementById('score').textContent = score;
+      document.getElementById('streak').textContent = `${streak} day${streak !== 1 ? 's' : ''}`;
+      document.getElementById('level').textContent = level;
+    }
+
+    // Determine contribution color based on segment position
+    function segmentColor(index, total) {
+      if (index === 0) return COLORS.head;
+      const ratio = 1 - (index / total);
+      const lvl = Math.min(3, Math.floor(ratio * 4));
+      return COLORS.levels[lvl];
+    }
+
+    function roundedRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function drawCell(x, y, color, radius = 2) {
+      const px = OFFSET_X + x * STEP;
+      const py = OFFSET_Y + y * STEP;
+      ctx.fillStyle = color;
+      roundedRect(ctx, px, py, CELL, CELL, radius);
+      ctx.fill();
+    }
+
+    // Spawn particles at a grid position
+    function spawnParticles(gx, gy, color, count) {
+      const cx = OFFSET_X + gx * STEP + CELL / 2;
+      const cy = OFFSET_Y + gy * STEP + CELL / 2;
+      for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+        const speed = 1.5 + Math.random() * 2.5;
+        particles.push({
+          x: cx, y: cy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: 3 + Math.random() * 4,
+          life: 1,
+          decay: 0.02 + Math.random() * 0.02,
+          color: color,
+        });
+      }
+    }
+
+    // Spawn floating score text
+    function spawnFloatingText(gx, gy, text) {
+      const cx = OFFSET_X + gx * STEP + CELL / 2;
+      const cy = OFFSET_Y + gy * STEP;
+      floatingTexts.push({
+        x: cx, y: cy,
+        text: text,
+        life: 1,
+        decay: 0.018,
+      });
+    }
+
+    function drawLabels() {
+      ctx.font = '10px Inter, -apple-system, sans-serif';
+      ctx.textBaseline = 'middle';
+
+      // Day labels (left side)
+      ctx.fillStyle = '#8b949e';
+      ctx.textAlign = 'right';
+      for (let r = 0; r < Math.min(7, ROWS); r++) {
+        if (DAY_LABELS[r]) {
+          const py = OFFSET_Y + r * STEP + CELL / 2;
+          ctx.fillText(DAY_LABELS[r], OFFSET_X - 6, py);
+        }
+      }
+
+      // Month labels (top)
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const colsPerMonth = Math.ceil(COLS / MONTH_LABELS.length);
+      for (let m = 0; m < MONTH_LABELS.length; m++) {
+        const col = m * colsPerMonth;
+        if (col < COLS) {
+          const px = OFFSET_X + col * STEP;
+          ctx.fillText(MONTH_LABELS[m], px, 4);
+        }
+      }
+    }
+
+    function drawParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.08; // gravity
+        p.life -= p.decay;
+
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        roundedRect(ctx, p.x - p.size / 2, p.y - p.size / 2, p.size, p.size, 1);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawFloatingTexts() {
+      for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const ft = floatingTexts[i];
+        ft.y -= 0.8;
+        ft.life -= ft.decay;
+
+        if (ft.life <= 0) {
+          floatingTexts.splice(i, 1);
+          continue;
+        }
+
+        ctx.globalAlpha = ft.life;
+        ctx.font = 'bold 13px Inter, -apple-system, sans-serif';
+        ctx.fillStyle = '#39d353';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(ft.text, ft.x, ft.y);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function draw() {
+      // Clear
+      ctx.fillStyle = '#0d1117';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw labels
+      drawLabels();
+
+      // Draw empty grid with subtle borders
+      for (let x = 0; x < COLS; x++) {
+        for (let y = 0; y < ROWS; y++) {
+          const px = OFFSET_X + x * STEP;
+          const py = OFFSET_Y + y * STEP;
+          // Fill
+          ctx.fillStyle = COLORS.empty;
+          roundedRect(ctx, px, py, CELL, CELL, 2);
+          ctx.fill();
+          // Subtle border
+          ctx.strokeStyle = COLORS.emptyBorder;
+          ctx.lineWidth = 0.5;
+          roundedRect(ctx, px, py, CELL, CELL, 2);
+          ctx.stroke();
+        }
+      }
+
+      // Draw food with pulse effect
+      foodPulse += 0.06;
+      const pulseScale = 1 + Math.sin(foodPulse) * 0.15;
+      const fpx = OFFSET_X + food.x * STEP + CELL / 2;
+      const fpy = OFFSET_Y + food.y * STEP + CELL / 2;
+
+      ctx.save();
+      ctx.shadowColor = COLORS.foodGlow;
+      ctx.shadowBlur = 10 + Math.sin(foodPulse) * 4;
+      const foodSize = CELL * pulseScale;
+      ctx.fillStyle = COLORS.food;
+      roundedRect(ctx, fpx - foodSize / 2, fpy - foodSize / 2, foodSize, foodSize, 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Draw snake segments (or death snapshot)
+      const drawSnake = (deathFlashTimer > 0 && deathSnakeSnapshot) ? deathSnakeSnapshot : snake;
+      const isDying = deathFlashTimer > 0;
+
+      for (let i = drawSnake.length - 1; i >= 0; i--) {
+        const seg = drawSnake[i];
+        let color;
+        if (isDying) {
+          // Flash between red and dark red
+          const flash = Math.floor(deathFlashTimer / 4) % 2 === 0;
+          color = flash ? COLORS.death : COLORS.deathDark;
+        } else {
+          color = segmentColor(i, drawSnake.length);
+        }
+        drawCell(seg.x, seg.y, color, 2);
+      }
+
+      // Draw eyes on head (not during death)
+      if (!isDying && snake.length > 0) {
+        const head = snake[0];
+        const hpx = OFFSET_X + head.x * STEP;
+        const hpy = OFFSET_Y + head.y * STEP;
+        ctx.fillStyle = COLORS.eyes;
+
+        const eyeSize = 3;
+        const eyeOffset = 3;
+        if (direction.x === 1) {
+          ctx.fillRect(hpx + CELL - eyeOffset - eyeSize, hpy + 2, eyeSize, eyeSize);
+          ctx.fillRect(hpx + CELL - eyeOffset - eyeSize, hpy + CELL - 2 - eyeSize, eyeSize, eyeSize);
+        } else if (direction.x === -1) {
+          ctx.fillRect(hpx + eyeOffset, hpy + 2, eyeSize, eyeSize);
+          ctx.fillRect(hpx + eyeOffset, hpy + CELL - 2 - eyeSize, eyeSize, eyeSize);
+        } else if (direction.y === -1) {
+          ctx.fillRect(hpx + 2, hpy + eyeOffset, eyeSize, eyeSize);
+          ctx.fillRect(hpx + CELL - 2 - eyeSize, hpy + eyeOffset, eyeSize, eyeSize);
+        } else {
+          ctx.fillRect(hpx + 2, hpy + CELL - eyeOffset - eyeSize, eyeSize, eyeSize);
+          ctx.fillRect(hpx + CELL - 2 - eyeSize, hpy + CELL - eyeOffset - eyeSize, eyeSize, eyeSize);
+        }
+      }
+
+      // Draw particles and floating text
+      drawParticles();
+      drawFloatingTexts();
+    }
+
+    function update() {
+      direction = { ...nextDirection };
+      const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+
+      // Wall collision
+      if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS) {
+        return triggerDeath();
+      }
+
+      // Self collision
+      for (const seg of snake) {
+        if (seg.x === head.x && seg.y === head.y) {
+          return triggerDeath();
+        }
+      }
+
+      snake.unshift(head);
+
+      // Eat food
+      if (head.x === food.x && head.y === food.y) {
+        const now = Date.now();
+        const timeSinceLast = now - lastFoodTime;
+        lastFoodTime = now;
+
+        if (timeSinceLast < 5000) {
+          streak++;
+          streakMultiplier = 1 + Math.floor(streak / 3) * 0.5;
+        } else {
+          streak = 1;
+          streakMultiplier = 1;
+        }
+
+        const points = Math.ceil(10 * streakMultiplier);
+        score += points;
+
+        // Particle burst
+        spawnParticles(head.x, head.y, COLORS.food, 8);
+        spawnFloatingText(head.x, head.y, `+${points}`);
+
+        // Level up every 50 points
+        const newLevel = Math.floor(score / 50) + 1;
+        if (newLevel > level) {
+          level = newLevel;
+          speed = Math.max(50, 120 - (level - 1) * 8);
+        }
+
+        placeFood();
+        updateUI();
+      } else {
+        snake.pop();
+      }
+    }
+
+    function triggerDeath() {
+      state = 'dying';
+      deathSnakeSnapshot = snake.map(s => ({ ...s }));
+      deathFlashTimer = 30; // frames of flashing
+
+      // Red particles from head
+      if (snake.length > 0) {
+        spawnParticles(snake[0].x, snake[0].y, COLORS.death, 12);
+      }
+
+      requestAnimationFrame(deathTick);
+    }
+
+    function deathTick() {
+      if (deathFlashTimer <= 0) {
+        gameOver();
+        return;
+      }
+      deathFlashTimer--;
+      draw();
+      requestAnimationFrame(deathTick);
+    }
+
+    function gameOver() {
+      state = 'over';
+      deathFlashTimer = 0;
+      deathSnakeSnapshot = null;
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('gh-snake-high', String(highScore));
+      }
+      showOverlay(
+        'Game Over',
+        `<div class="game-over-stats">
+          <strong>${score}</strong> contributions · <strong>${streak}</strong> day streak<br>
+          Best: <strong>${highScore}</strong> contributions
+        </div>`,
+        'Try again'
+      );
+    }
+
+    function showOverlay(title, sub, btnText) {
+      const ol = document.getElementById('overlay');
+      document.getElementById('overlay-title').textContent = title;
+      document.getElementById('overlay-sub').innerHTML = sub;
+      const btn = document.getElementById('overlay-btn');
+      btn.textContent = btnText;
+      ol.style.display = 'flex';
+      btn.focus();
+    }
+
+    function hideOverlay() {
+      document.getElementById('overlay').style.display = 'none';
+    }
+
+    function startGame() {
+      init();
+      hideOverlay();
+      state = 'playing';
+      lastTime = performance.now();
+      requestAnimationFrame(tick);
+    }
+
+    function tick(now) {
+      if (state !== 'playing') return;
+      const dt = now - lastTime;
+      lastTime = now;
+      accumulator += dt;
+
+      while (accumulator >= speed) {
+        update();
+        if (state !== 'playing') return;
+        accumulator -= speed;
+      }
+
+      draw();
+      requestAnimationFrame(tick);
+    }
+
+    // Input handling
+    const DIR_MAP = {
+      ArrowUp:    { x: 0, y: -1 },
+      ArrowDown:  { x: 0, y: 1 },
+      ArrowLeft:  { x: -1, y: 0 },
+      ArrowRight: { x: 1, y: 0 },
+      w: { x: 0, y: -1 }, W: { x: 0, y: -1 },
+      s: { x: 0, y: 1 },  S: { x: 0, y: 1 },
+      a: { x: -1, y: 0 }, A: { x: -1, y: 0 },
+      d: { x: 1, y: 0 },  D: { x: 1, y: 0 },
+    };
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === ' ' && state === 'playing') {
+        e.preventDefault();
+        state = 'paused';
+        showOverlay('Paused', 'Take a break. Your streak will wait.', 'Resume');
+        return;
+      }
+
+      const dir = DIR_MAP[e.key];
+      if (!dir) return;
+      e.preventDefault();
+
+      if (dir.x !== -direction.x || dir.y !== -direction.y) {
+        nextDirection = dir;
+      }
+    });
+
+    // Overlay button
+    document.getElementById('overlay-btn').addEventListener('click', () => {
+      if (state === 'paused') {
+        hideOverlay();
+        state = 'playing';
+        lastTime = performance.now();
+        accumulator = 0;
+        requestAnimationFrame(tick);
+      } else {
+        startGame();
+      }
+    });
+
+    // Touch controls
+    document.querySelectorAll('.touch-btn[data-dir]').forEach(btn => {
+      btn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const dirName = btn.dataset.dir;
+        const dir = DIR_MAP[
+          dirName === 'up' ? 'ArrowUp' :
+          dirName === 'down' ? 'ArrowDown' :
+          dirName === 'left' ? 'ArrowLeft' : 'ArrowRight'
+        ];
+        if (dir.x !== -direction.x || dir.y !== -direction.y) {
+          nextDirection = dir;
+        }
+      });
+    });
+
+    // Initial draw
+    init();
+    draw();
+    state = 'idle';
+  </script>
+</body>
+</html>
