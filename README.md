@@ -6,21 +6,26 @@ Built as a demo. Single HTML file, no dependencies, no build step.
 
 ## Play
 
-Open `index.html` in any browser, or serve it locally:
+**[▶ Play the live version](https://ashleymcnamara.github.io/contribution-snake/)**
+
+Or run it locally — open `index.html` in any browser, or serve it:
 
 ```bash
 python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
+It's an installable PWA: on a served version you can "Add to Home Screen" / install it, and it plays offline.
+
 ## Controls
 
-| Key | Action |
+| Input | Action |
 |-----|--------|
 | `↑` `↓` `←` `→` or `WASD` | Move |
-| `Space` | Pause |
+| Swipe on the board | Move (touch) |
+| `Space`, the ⏸ button, or a tap on the board | Pause / resume |
 
-Touch controls appear automatically on mobile.
+Touch controls (a D-pad plus swipe) appear automatically on mobile.
 
 ## How it works
 
@@ -35,10 +40,13 @@ Touch controls appear automatically on mobile.
 - Snake segments colored by contribution intensity (brighter = newer)
 - Score popups and particle effects on food pickup
 - Death flash animation with red particle burst
-- Streak tracking and multiplier system
-- High score saved to localStorage
-- Mobile touch controls
-- Fully self-contained — one HTML file, zero dependencies
+- Streak tracking and multiplier system (streaks survive pausing)
+- High score saved to localStorage and shown on the start screen
+- Responsive canvas that scales to fit any screen, crisp on high-DPI displays
+- Mobile support: on-screen D-pad, swipe to steer, tap to pause
+- Respects `prefers-reduced-motion` (no particles, strobe, or pulsing)
+- Installable PWA with offline support via a service worker
+- Fully self-contained — one HTML file, zero runtime dependencies
 
 ## Built with
 
