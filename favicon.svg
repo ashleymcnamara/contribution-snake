@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="GitHub Snake">
+  <rect x="0" y="0" width="100" height="100" rx="22" fill="#0d1117"/>
+  <g>
+    <!-- snake body: tail (dark) to head (bright), on a contribution grid -->
+    <rect x="20" y="74" width="14" height="14" rx="3" fill="#0e4429"/>
+    <rect x="20" y="56" width="14" height="14" rx="3" fill="#006d32"/>
+    <rect x="38" y="56" width="14" height="14" rx="3" fill="#006d32"/>
+    <rect x="56" y="56" width="14" height="14" rx="3" fill="#26a641"/>
+    <rect x="56" y="38" width="14" height="14" rx="3" fill="#26a641"/>
+    <rect x="56" y="20" width="14" height="14" rx="3" fill="#39d353"/>
+    <!-- head eyes -->
+    <rect x="60" y="24" width="3" height="3" rx="1" fill="#0d1117"/>
+    <rect x="67" y="24" width="3" height="3" rx="1" fill="#0d1117"/>
+  </g>
+</svg>

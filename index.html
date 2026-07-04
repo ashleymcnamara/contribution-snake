@@ -3,22 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GitHub Snake</title>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  <title>GitHub Snake — a contribution-graph snake game</title>
+  <meta name="description" content="A snake game themed around the GitHub contribution graph. Eat commits, build streaks, and level up. One HTML file, no dependencies, plays offline.">
+  <meta name="theme-color" content="#0d1117">
+  <meta name="color-scheme" content="dark">
 
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="GitHub Snake">
+  <meta property="og:description" content="A snake game themed around the GitHub contribution graph. Eat commits, build streaks, and level up.">
+  <meta property="og:url" content="https://ashleymcnamara.github.io/contribution-snake/">
+  <meta property="og:image" content="https://ashleymcnamara.github.io/contribution-snake/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="GitHub Snake">
+  <meta name="twitter:description" content="A snake game themed around the GitHub contribution graph. Eat commits, build streaks, and level up.">
+  <meta name="twitter:image" content="https://ashleymcnamara.github.io/contribution-snake/og-image.png">
+
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       background: #0d1117;
       color: #e6edf3;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      overflow: hidden;
+      padding: 16px;
+      overflow-x: hidden;
     }
 
     .game-container {
@@ -26,6 +48,7 @@
       flex-direction: column;
       align-items: center;
       gap: 16px;
+      max-width: 100%;
     }
 
     .header {
@@ -50,7 +73,8 @@
     .stats-bar {
       display: flex;
       align-items: center;
-      gap: 24px;
+      flex-wrap: wrap;
+      gap: 10px 16px;
       font-size: 14px;
       color: #8b949e;
       width: 100%;
@@ -69,6 +93,45 @@
       font-variant-numeric: tabular-nums;
     }
 
+    .icon-btn {
+      margin-left: auto;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      width: 30px;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0;
+    }
+
+    .icon-btn:hover { background: #30363d; }
+    .icon-btn:focus-visible {
+      outline: 2px solid #58a6ff;
+      outline-offset: 2px;
+    }
+    .icon-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
     .contribution-label {
       font-size: 12px;
       color: #8b949e;
@@ -82,10 +145,14 @@
       overflow: hidden;
       background: #161b22;
       box-shadow: 0 0 0 1px rgba(240, 246, 252, 0.04);
+      max-width: 100%;
     }
 
     canvas {
       display: block;
+      max-width: 100%;
+      height: auto;
+      touch-action: none;
     }
 
     .legend {
@@ -105,7 +172,7 @@
 
     .controls-hint {
       font-size: 12px;
-      color: #484f58;
+      color: #8b949e;
       text-align: center;
       line-height: 1.6;
     }
@@ -236,18 +303,25 @@
         <span>Level:</span>
         <span class="stat-value" id="level">1</span>
       </div>
+      <div class="stat">
+        <span>Best:</span>
+        <span class="stat-value" id="best">0</span>
+      </div>
+      <button class="icon-btn" id="pause-btn" type="button" aria-label="Pause" disabled>⏸</button>
     </div>
 
     <div class="contribution-label">Snake graph</div>
 
     <div class="canvas-wrapper" style="position: relative;">
-      <canvas id="game"></canvas>
+      <canvas id="game" role="img" aria-label="Snake game board styled as a GitHub contribution graph"></canvas>
       <div class="overlay" id="overlay">
         <div class="overlay-title" id="overlay-title">GitHub Snake</div>
         <div class="overlay-sub" id="overlay-sub">Eat commits. Grow your streak.</div>
         <button class="btn" id="overlay-btn" autofocus>Start contributing</button>
       </div>
     </div>
+
+    <div class="sr-only" id="a11y-status" role="status" aria-live="polite"></div>
 
     <div class="legend">
       <span>Less</span>
@@ -289,12 +363,31 @@
     const LABEL_TOP = 18;   // space for month labels
     const GRID_COLS = 36;
     const GRID_ROWS = 22;
-    canvas.width = LABEL_LEFT + GRID_COLS * STEP + GAP + 8;
-    canvas.height = LABEL_TOP + GRID_ROWS * STEP + GAP + 8;
+    const LOGICAL_W = LABEL_LEFT + GRID_COLS * STEP + GAP + 8;
+    const LOGICAL_H = LABEL_TOP + GRID_ROWS * STEP + GAP + 8;
     const COLS = GRID_COLS;
     const ROWS = GRID_ROWS;
     const OFFSET_X = LABEL_LEFT + 4;
     const OFFSET_Y = LABEL_TOP + 4;
+
+    // Shared font stack (no web-font dependency) for canvas text.
+    const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+    // Crisp rendering on high-DPI displays; CSS keeps the element responsive.
+    function setupCanvas() {
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      canvas.width = Math.round(LOGICAL_W * dpr);
+      canvas.height = Math.round(LOGICAL_H * dpr);
+      canvas.style.width = LOGICAL_W + 'px';
+      canvas.style.height = LOGICAL_H + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    setupCanvas();
+
+    // Honor reduced-motion preference (skip particles, strobe, pulsing).
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let reduceMotion = motionQuery.matches;
+    motionQuery.addEventListener('change', (e) => { reduceMotion = e.matches; });
 
     // Update overlay size to match canvas
     const overlay = document.getElementById('overlay');
@@ -318,11 +411,13 @@
     const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     // Game state
-    let snake, direction, nextDirection, food, score, highScore, streak;
+    let snake, direction, food, score, highScore, streak;
     let speed, level, gameLoop, state, lastTime, accumulator;
     let foodPulse = 0;
     let streakMultiplier = 1;
     let lastFoodTime = 0;
+    let directionQueue = [];
+    let pauseStartTime = 0;
 
     // Visual effects
     let particles = [];
@@ -340,7 +435,7 @@
         snake.push({ x: startX - i, y: startY });
       }
       direction = { x: 1, y: 0 };
-      nextDirection = { x: 1, y: 0 };
+      directionQueue = [];
       score = 0;
       streak = 0;
       streakMultiplier = 1;
@@ -373,6 +468,21 @@
       document.getElementById('score').textContent = score;
       document.getElementById('streak').textContent = `${streak} day${streak !== 1 ? 's' : ''}`;
       document.getElementById('level').textContent = level;
+      document.getElementById('best').textContent = highScore;
+    }
+
+    // Announce meaningful moments to assistive tech without spamming every point.
+    function announce(msg) {
+      const el = document.getElementById('a11y-status');
+      if (el) el.textContent = msg;
+    }
+
+    // Validated direction queue — prevents 180° reversals from fast key presses.
+    function queueDirection(dir) {
+      const last = directionQueue.length ? directionQueue[directionQueue.length - 1] : direction;
+      if (dir.x === -last.x && dir.y === -last.y) return; // no reversing
+      if (dir.x === last.x && dir.y === last.y) return;   // no duplicate
+      if (directionQueue.length < 3) directionQueue.push(dir);
     }
 
     // Determine contribution color based on segment position
@@ -407,6 +517,7 @@
 
     // Spawn particles at a grid position
     function spawnParticles(gx, gy, color, count) {
+      if (reduceMotion) return;
       const cx = OFFSET_X + gx * STEP + CELL / 2;
       const cy = OFFSET_Y + gy * STEP + CELL / 2;
       for (let i = 0; i < count; i++) {
@@ -437,7 +548,7 @@
     }
 
     function drawLabels() {
-      ctx.font = '10px Inter, -apple-system, sans-serif';
+      ctx.font = '10px ' + FONT;
       ctx.textBaseline = 'middle';
 
       // Day labels (left side)
@@ -496,7 +607,7 @@
         }
 
         ctx.globalAlpha = ft.life;
-        ctx.font = 'bold 13px Inter, -apple-system, sans-serif';
+        ctx.font = 'bold 13px ' + FONT;
         ctx.fillStyle = '#39d353';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
@@ -508,7 +619,7 @@
     function draw() {
       // Clear
       ctx.fillStyle = '#0d1117';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 
       // Draw labels
       drawLabels();
@@ -532,13 +643,13 @@
 
       // Draw food with pulse effect
       foodPulse += 0.06;
-      const pulseScale = 1 + Math.sin(foodPulse) * 0.15;
+      const pulseScale = reduceMotion ? 1 : 1 + Math.sin(foodPulse) * 0.15;
       const fpx = OFFSET_X + food.x * STEP + CELL / 2;
       const fpy = OFFSET_Y + food.y * STEP + CELL / 2;
 
       ctx.save();
       ctx.shadowColor = COLORS.foodGlow;
-      ctx.shadowBlur = 10 + Math.sin(foodPulse) * 4;
+      ctx.shadowBlur = reduceMotion ? 8 : 10 + Math.sin(foodPulse) * 4;
       const foodSize = CELL * pulseScale;
       ctx.fillStyle = COLORS.food;
       roundedRect(ctx, fpx - foodSize / 2, fpy - foodSize / 2, foodSize, foodSize, 2);
@@ -553,8 +664,8 @@
         const seg = drawSnake[i];
         let color;
         if (isDying) {
-          // Flash between red and dark red
-          const flash = Math.floor(deathFlashTimer / 4) % 2 === 0;
+          // Flash between red and dark red (steady red when reduced motion)
+          const flash = reduceMotion ? true : Math.floor(deathFlashTimer / 4) % 2 === 0;
           color = flash ? COLORS.death : COLORS.deathDark;
         } else {
           color = segmentColor(i, drawSnake.length);
@@ -592,7 +703,9 @@
     }
 
     function update() {
-      direction = { ...nextDirection };
+      if (directionQueue.length) {
+        direction = directionQueue.shift();
+      }
       const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
 
       // Wall collision
@@ -635,6 +748,7 @@
         if (newLevel > level) {
           level = newLevel;
           speed = Math.max(50, 120 - (level - 1) * 8);
+          announce(`Level ${level}`);
         }
 
         placeFood();
@@ -671,10 +785,13 @@
       state = 'over';
       deathFlashTimer = 0;
       deathSnakeSnapshot = null;
+      updatePauseButton();
       if (score > highScore) {
         highScore = score;
         localStorage.setItem('gh-snake-high', String(highScore));
       }
+      updateUI();
+      announce(`Game over. ${score} contributions, ${streak} day streak.`);
       showOverlay(
         'Game Over',
         `<div class="game-over-stats">
@@ -703,8 +820,43 @@
       init();
       hideOverlay();
       state = 'playing';
+      updatePauseButton();
+      announce(`Game started. Level ${level}.`);
       lastTime = performance.now();
       requestAnimationFrame(tick);
+    }
+
+    function pauseGame() {
+      if (state !== 'playing') return;
+      state = 'paused';
+      pauseStartTime = Date.now();
+      updatePauseButton();
+      showOverlay('Paused', 'Take a break. Your streak will wait.', 'Resume');
+    }
+
+    function resumeGame() {
+      if (state !== 'paused') return;
+      // Shift the food timer forward so the streak survives the pause.
+      lastFoodTime += Date.now() - pauseStartTime;
+      hideOverlay();
+      state = 'playing';
+      updatePauseButton();
+      lastTime = performance.now();
+      accumulator = 0;
+      requestAnimationFrame(tick);
+    }
+
+    function togglePause() {
+      if (state === 'playing') pauseGame();
+      else if (state === 'paused') resumeGame();
+    }
+
+    function updatePauseButton() {
+      const btn = document.getElementById('pause-btn');
+      const active = state === 'playing' || state === 'paused';
+      btn.disabled = !active;
+      btn.textContent = state === 'paused' ? '▶' : '⏸';
+      btn.setAttribute('aria-label', state === 'paused' ? 'Resume' : 'Pause');
     }
 
     function tick(now) {
@@ -736,55 +888,85 @@
     };
 
     document.addEventListener('keydown', (e) => {
-      if (e.key === ' ' && state === 'playing') {
-        e.preventDefault();
-        state = 'paused';
-        showOverlay('Paused', 'Take a break. Your streak will wait.', 'Resume');
+      if (e.key === ' ') {
+        if (state === 'playing' || state === 'paused') {
+          e.preventDefault();
+          togglePause();
+        }
         return;
       }
 
       const dir = DIR_MAP[e.key];
       if (!dir) return;
       e.preventDefault();
-
-      if (dir.x !== -direction.x || dir.y !== -direction.y) {
-        nextDirection = dir;
-      }
+      queueDirection(dir);
     });
+
+    // Pause button (mouse + touch)
+    document.getElementById('pause-btn').addEventListener('click', togglePause);
 
     // Overlay button
     document.getElementById('overlay-btn').addEventListener('click', () => {
       if (state === 'paused') {
-        hideOverlay();
-        state = 'playing';
-        lastTime = performance.now();
-        accumulator = 0;
-        requestAnimationFrame(tick);
+        resumeGame();
       } else {
         startGame();
       }
     });
 
-    // Touch controls
+    // Touch D-pad
     document.querySelectorAll('.touch-btn[data-dir]').forEach(btn => {
       btn.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        const dirName = btn.dataset.dir;
-        const dir = DIR_MAP[
-          dirName === 'up' ? 'ArrowUp' :
-          dirName === 'down' ? 'ArrowDown' :
-          dirName === 'left' ? 'ArrowLeft' : 'ArrowRight'
-        ];
-        if (dir.x !== -direction.x || dir.y !== -direction.y) {
-          nextDirection = dir;
-        }
-      });
+        const map = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' };
+        queueDirection(DIR_MAP[map[btn.dataset.dir]]);
+      }, { passive: false });
     });
+
+    // Swipe to steer, tap to pause — directly on the board
+    let touchStartX = 0, touchStartY = 0, touchStartT = 0;
+    canvas.addEventListener('touchstart', (e) => {
+      const t = e.changedTouches[0];
+      touchStartX = t.clientX;
+      touchStartY = t.clientY;
+      touchStartT = Date.now();
+    }, { passive: true });
+
+    canvas.addEventListener('touchend', (e) => {
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStartX;
+      const dy = t.clientY - touchStartY;
+      const absX = Math.abs(dx), absY = Math.abs(dy);
+      if (absX < 24 && absY < 24) {
+        // Small, quick touch = tap → toggle pause.
+        if (Date.now() - touchStartT < 300) togglePause();
+        return;
+      }
+      if (absX > absY) queueDirection(dx > 0 ? DIR_MAP.ArrowRight : DIR_MAP.ArrowLeft);
+      else queueDirection(dy > 0 ? DIR_MAP.ArrowDown : DIR_MAP.ArrowUp);
+    }, { passive: true });
+
+    // Re-apply DPI scaling if the display / zoom changes.
+    window.addEventListener('resize', () => { setupCanvas(); draw(); });
+
+    // Register service worker for offline play (skipped on file://).
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
+
+    // Surface the best score on the start screen when there's one to beat.
+    if (highScore > 0) {
+      document.getElementById('overlay-sub').textContent =
+        `Eat commits. Grow your streak. Best: ${highScore}.`;
+    }
 
     // Initial draw
     init();
     draw();
     state = 'idle';
+    updatePauseButton();
   </script>
 </body>
 </html>
