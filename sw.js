@@ -1,5 +1,11 @@
-// Simple offline-first service worker for GitHub Snake.
-const CACHE = 'gh-snake-v1';
+// Service worker for GitHub Snake.
+// Strategy:
+//  - Navigations (HTML): network-first, so a fresh deploy is always picked up
+//    when online, falling back to the cached shell only when offline.
+//  - Other GET requests (assets): stale-while-revalidate, so they load fast
+//    but still refresh in the background.
+// Bump CACHE whenever the cached asset list changes to purge old caches.
+const CACHE = 'gh-snake-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -29,18 +35,36 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
-  event.respondWith((async () => {
-    const cached = await caches.match(req);
-    if (cached) return cached;
-    try {
-      return await fetch(req);
-    } catch (err) {
-      // Offline fallback to the app shell for navigations.
-      if (req.mode === 'navigate') {
-        const shell = await caches.match('./index.html');
-        if (shell) return shell;
+
+  // Network-first for page navigations so users always get the latest deploy.
+  if (req.mode === 'navigate') {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req);
+        const cache = await caches.open(CACHE);
+        cache.put('./index.html', fresh.clone()).catch(() => {});
+        return fresh;
+      } catch (err) {
+        const cached = (await caches.match(req)) || (await caches.match('./index.html'));
+        if (cached) return cached;
+        throw err;
       }
-      throw err;
-    }
+    })());
+    return;
+  }
+
+  // Stale-while-revalidate for other GET requests (static assets).
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const cached = await cache.match(req);
+    const network = fetch(req)
+      .then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          cache.put(req, res.clone()).catch(() => {});
+        }
+        return res;
+      })
+      .catch(() => null);
+    return cached || (await network) || fetch(req);
   })());
 });
