@@ -54,10 +54,10 @@
   <meta name="twitter:description" content="A snake game themed around the GitHub contribution graph. Play your real contributions, race the daily challenge, and climb the leaderboard.">
   <meta name="twitter:image" content="https://yetanothersnake.dev/og-image.png">
 
+  <link rel="canonical" href="https://yetanothersnake.dev/">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
-  <link rel="preload" href="./src/fonts/mona-sans.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
   <div class="game-container">
@@ -160,10 +160,15 @@
         <button class="linklike" id="btn-watch-shared" hidden>Watch again</button>
         <button class="linklike" id="btn-watch-best" hidden>Watch your best run</button>
         <button class="linklike" id="btn-stats" hidden>Stats</button>
+        <button class="linklike" id="btn-achievements" hidden>Achievements</button>
 
         <!-- Stats panel -->
         <div class="stats-panel" id="stats-panel" hidden></div>
         <button class="btn btn-secondary" id="stats-back" hidden>Back</button>
+
+        <!-- Achievements panel -->
+        <div class="achievements-panel" id="achievements-panel" hidden></div>
+        <button class="btn btn-secondary" id="achievements-back" hidden>Back</button>
 
         <!-- Pause -->
         <button class="btn" id="btn-resume" hidden>Resume</button>
@@ -198,6 +203,8 @@
         <div class="leaderboard" id="leaderboard" hidden></div>
         </div>
       </div>
+
+      <div class="countdown" id="countdown" hidden aria-hidden="true"></div>
     </div>
 
     <div class="spectate-cta" id="spectate-cta" hidden>
@@ -205,6 +212,8 @@
     </div>
 
     <div class="sr-only" id="a11y-status" role="status" aria-live="polite"></div>
+
+    <div class="toast-stack" id="toast-stack"></div>
 
     <div class="legend">
       <span>Less</span>

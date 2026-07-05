@@ -13,6 +13,7 @@ import {
   buildShareCard, downloadCard, shareText, gameUrl, shareLinks, nativeShare,
 } from './share.js';
 import { icons } from './icons.js';
+import { ACHIEVEMENTS, loadUnlocked, evaluate as evaluateAchievements } from './achievements.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -109,6 +110,33 @@ function announce(msg) {
   $('a11y-status').textContent = msg;
 }
 
+// Short vibration on supported touch devices. Patterns are deliberately tiny so
+// frequent events (eating) stay pleasant rather than buzzy.
+function haptic(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
+// Transient corner toast (used for achievement unlocks). Also mirrored to the
+// screen-reader live region by the caller via announce().
+function toast(icon, title, sub) {
+  const stack = $('toast-stack');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML =
+    `<span class="toast-icon" aria-hidden="true">${icon}</span>` +
+    `<span class="toast-text"><strong>${escapeHtml(title)}</strong>` +
+    (sub ? `<span>${escapeHtml(sub)}</span>` : '') + `</span>`;
+  stack.appendChild(el);
+  // Trigger the enter transition on the next frame.
+  requestAnimationFrame(() => el.classList.add('show'));
+  const remove = () => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 300);
+  };
+  setTimeout(remove, 4200);
+  el.addEventListener('click', remove);
+}
+
 function updatePauseButton() {
   const btn = $('pause-btn');
   const active = state === 'playing' || state === 'paused';
@@ -119,10 +147,12 @@ function updatePauseButton() {
 
 // --- overlay management ---
 const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-watch-shared',
-  'btn-watch-best', 'btn-stats', 'stats-panel', 'stats-back', 'btn-resume', 'submit-row',
+  'btn-watch-best', 'btn-stats', 'btn-achievements', 'stats-panel', 'stats-back',
+  'achievements-panel', 'achievements-back', 'btn-resume', 'submit-row',
   'over-actions', 'share-row', 'lb-tabs', 'leaderboard', 'over-stats'];
 
 function showOverlay(title, sub, sections = []) {
+  clearCountdown(); // cancel any pending resume countdown if we navigate away
   $('overlay-title').textContent = title;
   $('overlay-sub').textContent = sub;
   for (const id of OVERLAY_SECTIONS) $(id).hidden = !sections.includes(id);
@@ -222,7 +252,7 @@ function showStartScreen() {
     best > 0 ? `Eat commits. Grow your streak. Best: ${best}.` : 'Eat commits. Grow your streak.',
     ['mode-buttons', ...(serverOk ? ['btn-leaderboard'] : []),
       ...(localBest ? ['btn-watch-best'] : []),
-      ...(stats.games > 0 ? ['btn-stats'] : [])]
+      ...(stats.games > 0 ? ['btn-stats', 'btn-achievements'] : [])]
   );
   if (localBest) {
     $('btn-watch-best').textContent = `Watch your best run (${localBest.score} pts)`;
@@ -373,18 +403,22 @@ function handleStepEvents(ev) {
     spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
     spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
     audio.playEat(game.streak);
+    haptic(6);
     if (ev.levelUp) {
       spawnFloatingText(renderer, ev.head.x, ev.head.y, `LEVEL ${game.level}`, true);
       audio.playLevelUp();
+      haptic([0, 18, 40, 18]);
       announce(`Level ${game.level}`);
     }
     updateUI();
   }
   if (ev.won) {
     audio.playWin();
+    haptic([0, 40, 60, 40, 60, 80]);
     finishRun(true);
   } else if (ev.died) {
     audio.playDeath();
+    haptic([0, 90, 40, 90]);
     startDeathEffect(renderer, game.snake);
     state = 'dying';
     requestAnimationFrame(dyingTick);
@@ -575,6 +609,14 @@ function finishRun(won) {
 
   recordStats();
 
+  // Unlock achievements from the freshly-updated lifetime stats plus this run.
+  const variant = !!(game.wrap || (game.speedFactor && game.speedFactor !== 1));
+  const unlocked = evaluateAchievements({
+    stats: loadStats(),
+    run: { score: game.score, bestStreak: game.bestStreak, won, mode, variant },
+  });
+  for (const a of unlocked) toast(a.icon, `${a.name} unlocked`, a.desc);
+
   // Keep your best run per mode locally so it can be re-watched anytime.
   if (game.stepCount > 0) {
     const runKey = `gh-snake-bestrun-${mode}`;
@@ -623,7 +665,10 @@ function finishRun(won) {
     $('btn-submit').disabled = false;
     $('btn-submit').textContent = 'Submit score';
   }
-  announce(`Game over. ${game.score} points, best streak ${game.bestStreak}.`);
+  const unlockedMsg = unlocked.length
+    ? ` Achievement${unlocked.length > 1 ? 's' : ''} unlocked: ${unlocked.map((a) => a.name).join(', ')}.`
+    : '';
+  announce(`Game over. ${game.score} points, best streak ${game.bestStreak}.${unlockedMsg}`);
 }
 
 // --- pause / resume ---
@@ -637,12 +682,48 @@ function pauseGame() {
 function resumeGame() {
   if (state !== 'paused') return;
   hideOverlay();
-  state = 'playing';
+  state = 'resuming';
   setTouchControls(true);
   updatePauseButton();
-  lastTime = performance.now();
-  accumulator = 0;
-  requestAnimationFrame(tick);
+  // A brief 3-2-1 so you're never dropped straight back into a moving snake
+  // after a pause or a tab switch. Redraw the frozen board underneath each beat.
+  runCountdown(() => {
+    if (state !== 'resuming') return; // aborted (e.g. went home)
+    state = 'playing';
+    updatePauseButton();
+    lastTime = performance.now();
+    accumulator = 0;
+    requestAnimationFrame(tick);
+  });
+}
+
+let countdownTimers = [];
+function clearCountdown() {
+  countdownTimers.forEach(clearTimeout);
+  countdownTimers = [];
+  $('countdown').hidden = true;
+}
+
+function runCountdown(done) {
+  clearCountdown();
+  const el = $('countdown');
+  const steps = ['3', '2', '1'];
+  el.hidden = false;
+  const show = (i) => {
+    if (i >= steps.length) {
+      clearCountdown();
+      done();
+      return;
+    }
+    el.textContent = steps[i];
+    el.classList.remove('tick');
+    void el.offsetWidth; // restart the CSS pop animation
+    el.classList.add('tick');
+    audio.playClick();
+    if (game) draw(renderer, game, null, 1, { monthLabels, ghost });
+    countdownTimers.push(setTimeout(() => show(i + 1), 500));
+  };
+  show(0);
 }
 
 function togglePause() {
@@ -709,6 +790,23 @@ function showStatsScreen() {
       <div class="stat-name">${label}</div>
     </div>`).join('');
   showOverlay('Your stats', 'Stored locally in this browser.', ['stats-panel', 'stats-back']);
+}
+
+function showAchievementsScreen() {
+  const unlocked = loadUnlocked();
+  $('achievements-panel').innerHTML = ACHIEVEMENTS.map((a) => {
+    const got = unlocked.has(a.id);
+    return `<div class="achv ${got ? 'unlocked' : 'locked'}">
+      <div class="achv-badge" aria-hidden="true">${a.icon}</div>
+      <div class="achv-text">
+        <div class="achv-name">${escapeHtml(a.name)}</div>
+        <div class="achv-desc">${escapeHtml(a.desc)}</div>
+      </div>
+      ${got ? '<span class="achv-check" aria-hidden="true">✓</span>' : ''}
+    </div>`;
+  }).join('');
+  showOverlay('Achievements', `${unlocked.size} of ${ACHIEVEMENTS.length} unlocked`,
+    ['achievements-panel', 'achievements-back']);
 }
 
 // --- graph mode ---
@@ -818,9 +916,15 @@ const KEY_DIRS = {
 };
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && (state === 'spectating' || state === 'spectate-done')) {
-    exitSpectate();
-    return;
+  if (e.key === 'Escape') {
+    if (state === 'spectating' || state === 'spectate-done') { exitSpectate(); return; }
+    if (state === 'paused') { resumeGame(); return; }
+    // Back out of a secondary menu panel to the start screen.
+    if (state === 'idle' && (!$('leaderboard').hidden || !$('stats-panel').hidden
+        || !$('achievements-panel').hidden)) {
+      showStartScreen();
+      return;
+    }
   }
   if (e.key === ' ') {
     if (state === 'playing' || state === 'paused') {
@@ -918,6 +1022,8 @@ $('btn-watch-shared').addEventListener('click', () => {
 $('btn-play-own').addEventListener('click', () => exitSpectate({ toMenu: true }));
 $('btn-stats').addEventListener('click', showStatsScreen);
 $('stats-back').addEventListener('click', showStartScreen);
+$('btn-achievements').addEventListener('click', showAchievementsScreen);
+$('achievements-back').addEventListener('click', showStartScreen);
 $('var-wrap').addEventListener('change', (e) => {
   localStorage.setItem('gh-snake-var-wrap', e.target.checked ? '1' : '0');
   updateVariantNote();

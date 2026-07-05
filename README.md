@@ -39,7 +39,7 @@ Without configuration the server reads contribution calendars from GitHub's publ
 
 Two unranked variants — **wrap walls** and **chill speed** — can be toggled on the start screen for classic and graph modes. Variant runs never create a server session, so they can't touch the leaderboard by construction.
 
-Click any leaderboard entry to **watch that run** — the server stores the input log of every verified score, and the client plays it back through the same deterministic core. A bot plays an attract-mode demo behind the start screen (disabled under reduced motion), and a local stats panel tracks your games, averages, and daily-challenge streak.
+Click any leaderboard entry to **watch that run** — the server stores the input log of every verified score, and the client plays it back through the same deterministic core. A bot plays an attract-mode demo behind the start screen (disabled under reduced motion), and a local stats panel tracks your games, averages, and daily-challenge streak. **Unlockable achievements** reward milestones — your first game, a 100-point run, a 25-streak, clearing a whole graph, a 7-day daily streak — and pop a toast the moment you earn them.
 
 Game-over screens have one-tap sharing to X, Bluesky, and Threads (plus the native share sheet with the card image attached, where supported). Graph-mode shares deep-link to `?user=<name>`, so whoever clicks lands ready to play that exact graph; daily shares link to `?daily=1`.
 
@@ -78,7 +78,7 @@ Forging a score would require finding an input sequence that plays that well *an
 
 ## Frontend
 
-Vite + vanilla JS modules, canvas rendering. Interpolated movement with a connected snake body, a visible combo-window meter, particles, screen shake, a WebAudio synth (no audio files), dark/light themes matching GitHub's palettes plus a colorblind-safe blue/orange palette (mirroring GitHub's own colorblind option), shareable 1200×630 game-over cards with your rank, auto-pause on tab switch, PWA/offline support, reduced-motion and screen-reader friendly. All icons are inline SVG.
+Vite + vanilla JS modules, canvas rendering. Interpolated movement with a connected snake body, a visible combo-window meter, particles, screen shake, a WebAudio synth (no audio files), dark/light themes matching GitHub's palettes plus a colorblind-safe blue/orange palette (mirroring GitHub's own colorblind option), shareable 1200×630 game-over cards with your rank, auto-pause on tab switch, unlockable achievements, a 3-2-1 resume countdown, haptic feedback on touch devices, PWA/offline support, reduced-motion and screen-reader friendly. All icons are inline SVG.
 
 ```
 src/
@@ -86,7 +86,8 @@ src/
   game/rng.js         seeded PRNG
   render/renderer.js  canvas drawing, interpolation, ghosts, effects
   main.js             game loop, modes, spectating, UI wiring
-  audio.js  theme.js  api.js  share.js
+  achievements.js     unlockable milestones (pure logic, local storage)
+  audio.js  theme.js  api.js  share.js  icons.js
 server/
   logic.js            all API behavior (adapter- and storage-agnostic)
   github.js           contribution fetcher (GraphQL or public-page fallback)
