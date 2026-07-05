@@ -1,6 +1,6 @@
 {
-  "name": "GitHub Snake",
-  "short_name": "GH Snake",
+  "name": "Contribution Snake",
+  "short_name": "Contrib Snake",
   "description": "A snake game themed around the GitHub contribution graph.",
   "start_url": "./",
   "scope": "./",

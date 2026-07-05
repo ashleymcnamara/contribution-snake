@@ -202,7 +202,7 @@ function showStartScreen() {
   const localBest = bestLocalRun();
   const stats = loadStats();
   showOverlay(
-    'GitHub Snake',
+    'Contribution Snake',
     best > 0 ? `Eat commits. Grow your streak. Best: ${best}.` : 'Eat commits. Grow your streak.',
     ['mode-buttons', ...(serverOk ? ['btn-leaderboard'] : []),
       ...(localBest ? ['btn-watch-best'] : []),
