@@ -53,7 +53,7 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
   ctx.font = `bold 44px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText('GitHub Snake', 64, 52);
+  ctx.fillText('Contribution Snake', 64, 52);
   ctx.font = `26px ${FONT}`;
   ctx.fillStyle = theme.textMuted;
   ctx.fillText(username ? `${modeLabel} · @${username}` : modeLabel, 66, 112);
@@ -87,7 +87,7 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
   return canvas;
 }
 
-export async function downloadCard(canvas, filename = 'github-snake-run.png') {
+export async function downloadCard(canvas, filename = 'contribution-snake-run.png') {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) return;
   const url = URL.createObjectURL(blob);
@@ -126,7 +126,7 @@ export async function nativeShare({ text, url, canvas }) {
     if (canvas && navigator.canShare) {
       const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
       if (blob) {
-        const file = new File([blob], 'github-snake.png', { type: 'image/png' });
+        const file = new File([blob], 'contribution-snake.png', { type: 'image/png' });
         if (navigator.canShare({ files: [file] })) data.files = [file];
       }
     }
@@ -140,7 +140,7 @@ export async function nativeShare({ text, url, canvas }) {
 export function shareText({ game, mode, day, rank, username }) {
   const rankTag = rank ? ` · #${rank}${mode === 'daily' ? ' today' : ''}` : '';
   if (mode === 'daily') {
-    return `GitHub Snake Daily ${day} — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
+    return `Contribution Snake Daily ${day} — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
   }
   if (mode === 'graph') {
     const pct = game.totalCells
@@ -151,5 +151,5 @@ export function shareText({ game, mode, day, rank, username }) {
       ? `I ate all of ${who} — ${game.score} points. Think you can too?`
       : `I ate ${pct}% of ${who} — ${game.score} points. Think you can beat that?`;
   }
-  return `GitHub Snake — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
+  return `Contribution Snake — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
 }

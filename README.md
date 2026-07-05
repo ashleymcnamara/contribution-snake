@@ -1,4 +1,4 @@
-# GitHub Snake
+# Contribution Snake
 
 A snake game themed around the GitHub contribution graph — now with a backend. Eat commits on a classic board, race everyone on the **daily challenge**, or type in a GitHub username and **play a real contribution graph**: committed days are the food, weighted by intensity.
 
