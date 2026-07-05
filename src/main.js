@@ -3,7 +3,7 @@ import { createGame, queueInput, step, boardSize } from './game/core.js';
 import { botSteer } from './game/bot.js';
 import { randomSeed } from './game/rng.js';
 import {
-  createRenderer, resizeBoard, draw, spawnParticles, spawnFloatingText,
+  createRenderer, resizeBoard, fitBoard, draw, spawnParticles, spawnFloatingText,
   startDeathEffect, clearEffects, effectsActive,
 } from './render/renderer.js';
 import { loadThemeName, loadPalette, applyTheme } from './theme.js';
@@ -127,10 +127,21 @@ function showOverlay(title, sub, sections = []) {
   $('overlay-sub').textContent = sub;
   for (const id of OVERLAY_SECTIONS) $(id).hidden = !sections.includes(id);
   $('overlay').style.display = 'flex';
+  // The touch d-pad is only useful during active play — keep it out of the way
+  // (and out of the layout, so the board can reclaim the space) on every menu,
+  // game-over, leaderboard and pause screen.
+  setTouchControls(false);
 }
 
 function hideOverlay() {
   $('overlay').style.display = 'none';
+}
+
+// Show/hide the on-screen d-pad and re-fit the board to the space that leaves.
+// It stays hidden on non-touch devices via the (pointer: coarse) media query.
+function setTouchControls(show) {
+  $('touch-controls').hidden = !show;
+  if (renderer.cols) fitBoard(renderer);
 }
 
 // --- attract mode: a bot plays behind the start overlay ---
@@ -330,6 +341,7 @@ async function startRun(selectedMode) {
 
   hideOverlay();
   state = 'playing';
+  setTouchControls(true);
   updatePauseButton();
   updateUI();
   announce(`${MODE_LABELS[mode]} started.`);
@@ -430,6 +442,7 @@ function beginSpectate(data, { label, returnTo = 'leaderboard' } = {}) {
   accumulator = 0;
   $('board-label').textContent = label;
   hideOverlay();
+  setTouchControls(false);
   $('spectate-cta').hidden = false;
   state = 'spectating';
   updatePauseButton();
@@ -606,6 +619,7 @@ function resumeGame() {
   if (state !== 'paused') return;
   hideOverlay();
   state = 'playing';
+  setTouchControls(true);
   updatePauseButton();
   lastTime = performance.now();
   accumulator = 0;

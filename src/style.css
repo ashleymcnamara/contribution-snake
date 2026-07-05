@@ -1,5 +1,10 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Snappier taps on mobile: no double-tap-zoom / 300ms delay on controls. */
+.btn, .icon-btn, .linklike, .touch-btn, .variant-toggle, input, button {
+  touch-action: manipulation;
+}
+
 /* Sections are toggled via the hidden attribute; make sure it always wins
    over display rules like .input-row { display: flex }. */
 [hidden] { display: none !important; }
@@ -30,7 +35,10 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  padding: 16px;
+  min-height: 100svh;
+  /* Respect notches / home indicator; falls back to 16px where env() is 0. */
+  padding: calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right))
+           calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
   overflow-x: hidden;
   transition: background 0.2s, color 0.2s;
 }
@@ -519,10 +527,29 @@ canvas {
   .controls-hint { display: none; }
 }
 
-@media (max-width: 640px) {
-  /* Narrow screens scale the board down (renderer uses height:auto), so give
-     the start / menu / game-over overlay the full viewport instead of trapping
-     it inside the short board box. Safe: the overlay is hidden during play. */
+/* Landscape phones are too short to stack a board and a d-pad. Float the d-pad
+   over the bottom-left of the board (out of flow, so the board keeps its full
+   height) — swipe-to-steer still works everywhere else on the board. */
+@media (orientation: landscape) and (pointer: coarse) {
+  .touch-controls {
+    position: fixed;
+    left: calc(10px + env(safe-area-inset-left));
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    margin: 0;
+    z-index: 20;
+    opacity: 0.92;
+  }
+  .touch-btn {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+@media (max-width: 640px), (max-height: 640px) {
+  /* Narrow / short screens scale the board down (renderer fits it to the
+     viewport), so give the start / menu / game-over overlay the full viewport
+     instead of trapping it inside the small board box. Safe: the overlay is
+     hidden during play. Covers portrait phones (width) and landscape (height). */
   .overlay {
     position: fixed;
     padding: 28px 18px;
