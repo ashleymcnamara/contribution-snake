@@ -5,10 +5,24 @@ const STORAGE_KEY = 'gh-snake-muted';
 let ctx = null;
 let muted = localStorage.getItem(STORAGE_KEY) === '1';
 
+// Must be called from inside a user gesture (tap/click/keydown). iOS Safari
+// creates the context in a "suspended" state and only lets us resume it while
+// a gesture is on the stack — resuming later (e.g. from the game loop) is
+// silently rejected, which is why sound worked on desktop but not on mobile.
 export function unlock() {
-  if (ctx || muted) return;
+  if (muted) return;
   try {
-    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // Playing a one-sample silent buffer inside the gesture fully unlocks
+      // audio output on iOS.
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    }
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
   } catch {
     ctx = null;
   }
