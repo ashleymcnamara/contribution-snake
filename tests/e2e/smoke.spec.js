@@ -83,3 +83,20 @@ test('stats panel appears after a finished run', async ({ page }) => {
   await page.click('#stats-back');
   await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
 });
+
+test('finishing a first game unlocks an achievement and opens the panel', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#btn-classic');
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+
+  // The very first finished run unlocks "First Bite" and toasts it.
+  await expect(page.locator('.toast')).toContainText('First Bite', { timeout: 5000 });
+
+  await page.click('#btn-menu');
+  await page.click('#btn-achievements');
+  await expect(page.locator('#overlay-title')).toHaveText('Achievements');
+  await expect(page.locator('#overlay-sub')).toContainText('unlocked');
+  await expect(page.locator('.achv.unlocked').first()).toBeVisible();
+  await page.click('#achievements-back');
+  await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
+});
