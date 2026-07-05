@@ -1,0 +1,30 @@
+{
+  "name": "contribution-snake",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A snake game themed around the GitHub contribution graph — play your real contributions.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "concurrently -n web,api -c green,blue \"vite\" \"node server/index.js\"",
+    "dev:web": "vite",
+    "dev:api": "node server/index.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "start": "NODE_ENV=production node server/index.js"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.7.9",
+    "express": "^4.21.2",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "concurrently": "^9.1.2",
+    "vite": "^6.3.5",
+    "vitest": "^4.1.9"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.netlify/
+.claude/
+.agents/
+server/data.sqlite
+server/data.sqlite-*
+.env
+.DS_Store
