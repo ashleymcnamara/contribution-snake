@@ -192,7 +192,17 @@ body {
   color: var(--text);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  /* Reserve a stable width so growing digits and the streak's appearing/
+     resizing "×N" multiplier don't change the bar's width mid-run. Without
+     this, on narrow widths the bar oscillates between one and two wrapped
+     lines every update, pulsing the label + graph below it up and down. */
+  display: inline-block;
+  min-width: 2ch;
 }
+
+.stats-bar #score,
+.stats-bar #best { min-width: 5ch; }
+.stats-bar #streak { min-width: 8ch; }
 
 .stats-bar .icon-btn { margin-left: auto; }
 
