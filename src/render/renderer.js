@@ -48,11 +48,41 @@ export function resizeBoard(r, cols, rows) {
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   r.canvas.width = Math.round(r.w * dpr);
   r.canvas.height = Math.round(r.h * dpr);
-  r.canvas.style.width = r.w + 'px';
-  // Let CSS derive height from the intrinsic ratio so `max-width:100%` scales
-  // the board proportionally on narrow screens instead of squishing it.
-  r.canvas.style.height = 'auto';
   r.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fitBoard(r);
+}
+
+// Scale the on-screen board to fit within both the available width and the
+// available viewport height, preserving the aspect ratio (never upscaled past
+// its logical size). Width-only fitting left the board overflowing the screen
+// in landscape / on short viewports, pushing the touch controls out of reach;
+// fitting height too keeps the whole UI on one screen without page scroll.
+export function fitBoard(r) {
+  const c = r.canvas;
+  if (!r.w || !r.h) return;
+  const bodyCS = getComputedStyle(document.body);
+  const padX = parseFloat(bodyCS.paddingLeft) + parseFloat(bodyCS.paddingRight);
+  const padY = parseFloat(bodyCS.paddingTop) + parseFloat(bodyCS.paddingBottom);
+  const availW = document.documentElement.clientWidth - padX;
+  const availH = window.innerHeight - padY;
+
+  // Fit to width first (the usual constraint in portrait), never upscaling.
+  let scale = Math.min(1, availW / r.w);
+  c.style.width = Math.floor(r.w * scale) + 'px';
+  c.style.height = Math.floor(r.h * scale) + 'px';
+
+  // The board is the only flexible element in the column, so any page overflow
+  // can be removed by shrinking it by exactly that overflow.
+  const container = c.closest('.game-container') || c.parentElement;
+  if (!container) return;
+  const overflow = container.scrollHeight - availH;
+  if (overflow > 4) {
+    const curH = r.h * scale;
+    const targetH = Math.max(70, curH - overflow);
+    scale *= targetH / curH;
+    c.style.width = Math.floor(r.w * scale) + 'px';
+    c.style.height = Math.floor(r.h * scale) + 'px';
+  }
 }
 
 const OX = () => LABEL_LEFT + PAD;
