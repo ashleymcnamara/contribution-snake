@@ -508,7 +508,12 @@ canvas {
 .achv-text { min-width: 0; flex: 1; }
 .achv-name { font-weight: 600; font-size: 14px; }
 .achv-desc { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
-.achv-check { flex: none; color: var(--accent); font-weight: 700; font-size: 16px; }
+.achv-check { flex: none; color: var(--accent); display: inline-flex; }
+.achv-check svg { width: 16px; height: 16px; }
+
+/* Inline "you played" check in the daily-note line. */
+.daily-done { color: var(--accent); }
+.daily-done svg { width: 13px; height: 13px; vertical-align: -2px; }
 
 .achv.unlocked .achv-badge {
   color: var(--accent);
@@ -650,7 +655,15 @@ canvas {
 
 .leaderboard-tabs {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
+}
+.leaderboard-tabs .btn.active {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--text);
+  font-weight: 600;
 }
 
 .lb-row {
