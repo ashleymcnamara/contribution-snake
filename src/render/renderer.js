@@ -24,6 +24,11 @@ export function createRenderer(canvas) {
     h: 0,
     theme: null,
     reduceMotion: false,
+    // cached offscreen render of the static empty grid (see drawGrid)
+    gridCanvas: null,
+    gridTheme: null,
+    gridCols: 0,
+    gridRows: 0,
     // effects state
     particles: [],
     floatingTexts: [],
@@ -49,6 +54,7 @@ export function resizeBoard(r, cols, rows) {
   r.canvas.width = Math.round(r.w * dpr);
   r.canvas.height = Math.round(r.h * dpr);
   r.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  r.gridTheme = null; // force the grid cache to rebuild at the new size / dpr
   fitBoard(r);
 }
 
@@ -168,26 +174,57 @@ function drawLabels(r, monthly) {
   }
 }
 
-function drawGrid(r, game) {
-  const { ctx, theme } = r;
+// The empty contribution grid is static during a run — classic/daily boards are
+// always empty, and graph mode only *loses* cells as they're eaten — so we
+// render it once to an offscreen canvas and blit it each frame instead of
+// stroking hundreds of rounded rects every animation frame (a 36×22 board is
+// ~800 cells). Graph mode then overlays just the remaining contribution cells.
+function buildGridCache(r) {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const c = r.gridCanvas || (r.gridCanvas = document.createElement('canvas'));
+  c.width = Math.round(r.w * dpr);
+  c.height = Math.round(r.h * dpr);
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, r.w, r.h);
+  const { theme } = r;
   for (let x = 0; x < r.cols; x++) {
     for (let y = 0; y < r.rows; y++) {
       const { px, py } = cellPx(x, y);
-      let fill = theme.empty;
-      // Graph mode: uneaten contribution cells are food, tinted by level.
-      if (game.mode === 'graph') {
-        const lvl = game.cells.get(`${x},${y}`);
-        if (lvl) fill = theme.levels[lvl - 1];
-      }
-      ctx.fillStyle = fill;
+      g.fillStyle = theme.empty;
+      roundedRect(g, px, py, CELL, CELL, 2);
+      g.fill();
+      g.strokeStyle = theme.emptyBorder;
+      g.lineWidth = 0.5;
+      roundedRect(g, px, py, CELL, CELL, 2);
+      g.stroke();
+    }
+  }
+  r.gridTheme = theme;
+  r.gridCols = r.cols;
+  r.gridRows = r.rows;
+}
+
+function ensureGridCache(r) {
+  if (r.gridCanvas && r.gridTheme === r.theme &&
+      r.gridCols === r.cols && r.gridRows === r.rows) return;
+  buildGridCache(r);
+}
+
+function drawGrid(r, game) {
+  ensureGridCache(r);
+  const { ctx, theme } = r;
+  ctx.drawImage(r.gridCanvas, 0, 0, r.w, r.h);
+  // Graph mode: overlay the uneaten contribution cells, tinted by level.
+  if (game.mode === 'graph' && game.cells) {
+    for (const [key, lvl] of game.cells) {
+      const comma = key.indexOf(',');
+      const x = +key.slice(0, comma);
+      const y = +key.slice(comma + 1);
+      const { px, py } = cellPx(x, y);
+      ctx.fillStyle = theme.levels[lvl - 1];
       roundedRect(ctx, px, py, CELL, CELL, 2);
       ctx.fill();
-      if (fill === theme.empty) {
-        ctx.strokeStyle = theme.emptyBorder;
-        ctx.lineWidth = 0.5;
-        roundedRect(ctx, px, py, CELL, CELL, 2);
-        ctx.stroke();
-      }
     }
   }
 }

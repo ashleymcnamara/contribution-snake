@@ -3,6 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <script>
+    // Pre-paint the theme so the correct palette is painted on the very first
+    // frame (no flash of the dark default before the JS module loads).
+    // Mirrors src/theme.js — keep the palettes here in sync with that file.
+    (function () {
+      try {
+        var T = {
+          dark:  { bg:'#0d1117', surface:'#161b22', border:'#30363d', text:'#e6edf3', muted:'#8b949e', accent:'#39d353', empty:'#161b22', levels:['#0e4429','#006d32','#26a641','#39d353'] },
+          light: { bg:'#ffffff', surface:'#f6f8fa', border:'#d0d7de', text:'#1f2328', muted:'#57606a', accent:'#1a7f37', empty:'#ebedf0', levels:['#9be9a8','#40c463','#30a14e','#216e39'] }
+        };
+        var BLUE = {
+          dark:  { accent:'#79c0ff', levels:['#0c2d6b','#1158c7','#388bfd','#79c0ff'] },
+          light: { accent:'#0969da', levels:['#b6e3ff','#54aeff','#0969da','#0a3069'] }
+        };
+        var saved = localStorage.getItem('gh-snake-theme');
+        var name = (saved === 'dark' || saved === 'light') ? saved
+          : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        var t = T[name];
+        if (localStorage.getItem('gh-snake-palette') === 'blue') t = Object.assign({}, t, BLUE[name]);
+        var s = document.documentElement.style;
+        s.setProperty('--bg', t.bg); s.setProperty('--surface', t.surface);
+        s.setProperty('--border', t.border); s.setProperty('--text', t.text);
+        s.setProperty('--text-muted', t.muted); s.setProperty('--accent', t.accent);
+        s.setProperty('--level-0', t.empty); s.setProperty('--level-1', t.levels[0]);
+        s.setProperty('--level-2', t.levels[1]); s.setProperty('--level-3', t.levels[2]);
+        s.setProperty('--level-4', t.levels[3]);
+        document.documentElement.dataset.theme = name;
+        s.colorScheme = name;
+      } catch (e) {}
+    })();
+  </script>
   <title>Contribution Snake — play snake on any GitHub contribution graph</title>
   <meta name="description" content="A snake game themed around the GitHub contribution graph. Play your real contributions, race the daily challenge, and climb the leaderboard.">
   <meta name="theme-color" content="#0d1117">
@@ -26,14 +57,49 @@
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="preload" href="./src/fonts/mona-sans.woff2" as="font" type="font/woff2" crossorigin>
 </head>
 <body>
   <div class="game-container">
     <div class="header">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/>
-      </svg>
-      <h1>Snake</h1>
+      <h1 class="site-title">
+        <a class="brand" id="home-link" href="/" aria-label="Contribution Snake — home">
+          <svg class="brand-icon" viewBox="0 0 417.11 254" width="62" height="38" aria-hidden="true" focusable="false">
+            <rect class="l1" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l1" x="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l2" x="132" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l2" x="198" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l1" y="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="66" y="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="132" y="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="198" y="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l2" x="264" y="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l2" x="330" y="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l1" y="132" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="66" y="132" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l2" x="264" y="132" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l2" x="330" y="132" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l1" y="198" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="66" y="198" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="132" y="198" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="198" y="198" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l3" x="264" y="198" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l2" x="330" y="198" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l4" x="198" y="132" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l4" x="264" y="132" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l4" x="264" y="66" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l4" x="264" width="56" height="56" rx="10" ry="10"/>
+            <rect class="l4" x="330" width="56" height="56" rx="10" ry="10"/>
+            <circle class="eye" cx="349" cy="21" r="3"/>
+            <circle class="eye" cx="367" cy="21" r="3"/>
+            <path class="tongue" d="M386,28h18M404,28l12-8M404,28l12,8"/>
+          </svg>
+          <span class="brand-word" aria-hidden="true">
+            <span class="brand-word-top">contribution</span>
+            <span class="brand-word-bottom">snake</span>
+          </span>
+        </a>
+      </h1>
       <div class="header-actions">
         <button class="icon-btn" id="sound-btn" type="button" aria-label="Toggle sound"></button>
         <button class="icon-btn" id="palette-btn" type="button" aria-label="Toggle colorblind palette"></button>
@@ -66,9 +132,9 @@
     <div class="canvas-wrapper">
       <canvas id="game" role="img" aria-label="Snake game board styled as a GitHub contribution graph"></canvas>
 
-      <div class="overlay" id="overlay">
+      <div class="overlay" id="overlay" role="dialog" aria-labelledby="overlay-title" aria-modal="false">
         <div class="overlay-inner">
-        <div class="overlay-title" id="overlay-title">Contribution Snake</div>
+        <div class="overlay-title" id="overlay-title" tabindex="-1">Contribution Snake</div>
         <div class="overlay-sub" id="overlay-sub">Eat commits. Grow your streak.</div>
         <div class="game-over-stats" id="over-stats" hidden></div>
 
