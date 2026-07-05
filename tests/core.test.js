@@ -77,9 +77,11 @@ describe('streak window', () => {
 });
 
 describe('graph mode', () => {
+  const emptyGrid = () => Array.from({ length: 52 }, () => new Array(7).fill(0));
+
   it('wins when all cells are eaten', () => {
     // Single food cell directly in the snake's path.
-    const grid = Array.from({ length: 52 }, () => new Array(7).fill(0));
+    const grid = emptyGrid();
     const probe = createGame({ mode: 'graph', seed: 1, graph: grid });
     const head = probe.snake[0];
     grid[head.x + 1][head.y] = 4;
@@ -89,6 +91,72 @@ describe('graph mode', () => {
     expect(ev.won).toBe(true);
     expect(game.won).toBe(true);
     expect(game.score).toBe(20); // level-4 cell
+  });
+
+  it('does not award a week bonus for a single-cell column', () => {
+    const grid = emptyGrid();
+    grid[27][3] = 4; // lone cell directly ahead of the head at (26,3)
+    const game = createGame({ mode: 'graph', seed: 1, graph: grid });
+    expect(game.totalCells).toBe(1);
+    const ev = step(game); // eat it — its column only ever had one cell
+    expect(ev.won).toBe(true);
+    expect(ev.weekCleared).toBeFalsy();
+    expect(game.score).toBe(20);
+  });
+
+  it('awards a multiplier-scaled bonus for clearing a whole week', () => {
+    const grid = emptyGrid();
+    // A two-cell week at column 28, plus a lone distractor so clearing the
+    // week doesn't also empty the board.
+    grid[28][3] = 1;
+    grid[28][4] = 1;
+    grid[30][3] = 1;
+    const game = createGame({ mode: 'graph', seed: 1, graph: grid });
+    expect(game.totalCells).toBe(3);
+    step(game);              // (27,3) — empty
+    const eat1 = step(game); // (28,3) — column 28: 2 -> 1, no clear yet
+    expect(eat1.weekCleared).toBeFalsy();
+    expect(queueInput(game, 2)).toBe(true); // turn down
+    const eat2 = step(game); // (28,4) — clears column 28
+    expect(eat2.weekCleared).toBe(true);
+    expect(eat2.weekCol).toBe(28);
+    expect(eat2.weekBonus).toBe(16); // 2 cells * 8 * 1x multiplier
+    expect(eat2.won).toBeFalsy();    // distractor cell remains
+    // 5 (eat1) + 5 (eat2) + 16 (week bonus) at a 1x multiplier.
+    expect(game.score).toBe(26);
+  });
+
+  it('clears the final week and wins in the same step, with the bonus applied', () => {
+    const grid = emptyGrid();
+    grid[28][3] = 1;
+    grid[28][4] = 1;
+    const game = createGame({ mode: 'graph', seed: 1, graph: grid });
+    expect(game.totalCells).toBe(2);
+    step(game);              // (27,3)
+    step(game);              // (28,3) — 2 -> 1
+    expect(queueInput(game, 2)).toBe(true);
+    const ev = step(game);   // (28,4) — clears the week and empties the board
+    expect(ev.won).toBe(true);
+    expect(ev.weekCleared).toBe(true);
+    expect(ev.weekBonus).toBe(16);
+    expect(game.won).toBe(true);
+    expect(game.score).toBe(26);
+  });
+
+  it('replays a graph run with a week bonus to an identical score', () => {
+    const grid = emptyGrid();
+    grid[28][3] = 1;
+    grid[28][4] = 1;
+    grid[30][3] = 1;
+    const live = createGame({ mode: 'graph', seed: 1, graph: grid });
+    step(live);              // (27,3)
+    step(live);              // (28,3)
+    queueInput(live, 2);     // logged input — turn down into the week
+    while (live.alive && !live.won) step(live); // run to the end
+    const replay = replayGame({ mode: 'graph', seed: 1, graph: grid }, live.inputLog);
+    expect(replay.score).toBe(live.score);
+    expect(replay.stepCount).toBe(live.stepCount);
+    expect(replay.won).toBe(live.won);
   });
 
   it('ramps speed by cells cleared, not score — a dense graph stays calm early', () => {

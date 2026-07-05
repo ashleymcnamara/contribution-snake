@@ -51,6 +51,14 @@ export const MAX_REPLAY_STEPS = 100000;
 // Points for eating a contribution cell of a given intensity in graph mode.
 const GRAPH_LEVEL_POINTS = [0, 5, 10, 15, 20];
 
+// Graph mode: clearing an entire week (a full column of contribution days that
+// started with at least WEEK_MIN_CELLS filled squares) awards a routing bonus
+// of WEEK_CELL_BONUS points per cleared cell, scaled by the current multiplier.
+// This rewards deliberate column-by-column play on dense graphs and stays out of
+// the ranked classic/daily modes, so existing leaderboards are unaffected.
+const WEEK_MIN_CELLS = 2;
+const WEEK_CELL_BONUS = 8;
+
 export function boardSize(mode) {
   return mode === 'graph'
     ? { cols: GRAPH_COLS, rows: GRAPH_ROWS }
@@ -99,14 +107,22 @@ export function createGame({ mode = 'classic', seed = 1, graph = null, wrap = fa
 
   if (mode === 'graph') {
     state.cells = new Map();
+    // Remaining and initial filled-cell counts per column (week), used to award
+    // a bonus when a whole week is cleared. Only cells not buried under the
+    // starting snake count, matching state.cells.
+    state.colCounts = new Array(cols).fill(0);
     for (let x = 0; x < cols; x++) {
       for (let y = 0; y < rows; y++) {
         const lvl = graph?.[x]?.[y] || 0;
         // Don't bury food under the starting snake.
         const onSnake = snake.some((s) => s.x === x && s.y === y);
-        if (lvl > 0 && !onSnake) state.cells.set(`${x},${y}`, lvl);
+        if (lvl > 0 && !onSnake) {
+          state.cells.set(`${x},${y}`, lvl);
+          state.colCounts[x]++;
+        }
       }
     }
+    state.colInitial = state.colCounts.slice();
     state.totalCells = state.cells.size;
   } else {
     placeFood(state);
@@ -217,6 +233,14 @@ export function step(state) {
       state.cells.delete(key);
       eatEvent = onEat(state, GRAPH_LEVEL_POINTS[lvl]);
       ate = true;
+      // Whole-week (column) clear bonus: only for weeks that started with at
+      // least WEEK_MIN_CELLS cells, so clearing a lone day isn't rewarded.
+      const col = head.x;
+      if (--state.colCounts[col] === 0 && state.colInitial[col] >= WEEK_MIN_CELLS) {
+        const weekBonus = Math.ceil(state.colInitial[col] * WEEK_CELL_BONUS * state.multiplier);
+        state.score += weekBonus;
+        eatEvent = { ...eatEvent, weekCleared: true, weekBonus, weekCol: col };
+      }
       if (state.cells.size === 0) {
         state.won = true;
         return { ate, ...eatEvent, won: true, head };

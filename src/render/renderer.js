@@ -32,6 +32,7 @@ export function createRenderer(canvas) {
     // effects state
     particles: [],
     floatingTexts: [],
+    columnFlashes: [],
     foodPulse: 0,
     shakeTimer: 0,
     deathFlashTimer: 0,
@@ -137,6 +138,12 @@ export function spawnFloatingText(r, gx, gy, text, big = false) {
   });
 }
 
+// A brief full-height highlight over a graph column when its week is cleared.
+export function spawnColumnFlash(r, col) {
+  if (r.reduceMotion) return;
+  r.columnFlashes.push({ col, life: 1, decay: 0.045 });
+}
+
 export function startDeathEffect(r, snake) {
   r.deathSnapshot = snake.map((s) => ({ ...s }));
   r.deathFlashTimer = 30;
@@ -146,6 +153,7 @@ export function startDeathEffect(r, snake) {
 export function clearEffects(r) {
   r.particles = [];
   r.floatingTexts = [];
+  r.columnFlashes = [];
   r.deathFlashTimer = 0;
   r.deathSnapshot = null;
   r.shakeTimer = 0;
@@ -384,6 +392,24 @@ function drawFloatingTexts(r) {
   ctx.globalAlpha = 1;
 }
 
+function drawColumnFlashes(r) {
+  if (!r.columnFlashes.length) return;
+  const { ctx, theme } = r;
+  const top = OY();
+  const height = r.rows * STEP_PX - GAP;
+  for (const f of r.columnFlashes) {
+    const px = OX() + f.col * STEP_PX;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, f.life) * 0.45;
+    ctx.fillStyle = theme.accent;
+    roundedRect(ctx, px - 1, top - 1, CELL + 2, height + 2, 3);
+    ctx.fill();
+    ctx.restore();
+    f.life -= f.decay;
+  }
+  r.columnFlashes = r.columnFlashes.filter((f) => f.life > 0);
+}
+
 // Draining bar showing how many steps remain to keep the streak alive —
 // makes the combo system legible instead of feeling random.
 function drawComboMeter(r, game, alpha) {
@@ -427,6 +453,7 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
 
   drawLabels(r, monthLabels);
   drawGrid(r, game);
+  drawColumnFlashes(r);
   drawFood(r, game);
   if (ghost) drawGhost(r, ghost);
   drawSnake(r, game, prevSnake, alpha);
@@ -439,5 +466,5 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
 
 export function effectsActive(r) {
   return r.particles.length > 0 || r.floatingTexts.length > 0 ||
-    r.deathFlashTimer > 0 || r.shakeTimer > 0;
+    r.columnFlashes.length > 0 || r.deathFlashTimer > 0 || r.shakeTimer > 0;
 }

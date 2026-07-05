@@ -4,7 +4,7 @@ import { botSteer } from './game/bot.js';
 import { randomSeed } from './game/rng.js';
 import {
   createRenderer, resizeBoard, fitBoard, draw, spawnParticles, spawnFloatingText,
-  startDeathEffect, clearEffects, effectsActive,
+  spawnColumnFlash, startDeathEffect, clearEffects, effectsActive,
 } from './render/renderer.js';
 import { loadThemeName, loadPalette, applyTheme } from './theme.js';
 import * as audio from './audio.js';
@@ -429,6 +429,13 @@ function handleStepEvents(ev) {
       haptic([0, 18, 40, 18]);
       announce(`Level ${game.level}`);
     }
+    if (ev.weekCleared) {
+      spawnFloatingText(renderer, ev.weekCol, 0, `WEEK +${ev.weekBonus}`, true);
+      spawnColumnFlash(renderer, ev.weekCol);
+      audio.playWeekClear();
+      haptic([0, 20, 30, 20]);
+      announce(`Week cleared, +${ev.weekBonus}`);
+    }
     updateUI();
   }
   if (ev.won) {
@@ -572,6 +579,10 @@ function spectateTick(now) {
     if (ev.ate) {
       spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
       spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
+      if (ev.weekCleared) {
+        spawnFloatingText(renderer, ev.weekCol, 0, `WEEK +${ev.weekBonus}`, true);
+        spawnColumnFlash(renderer, ev.weekCol);
+      }
     }
     accumulator -= game.speed;
     steps++;

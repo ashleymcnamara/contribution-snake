@@ -76,6 +76,13 @@ export function playWin() {
     blip(f, { type: 'triangle', dur: 0.12, vol: 0.05, when: i * 0.1 }));
 }
 
+// Clearing a whole week (graph column): a snappy two-note flourish, distinct
+// from the three-note level-up climb so a week clear reads on its own.
+export function playWeekClear() {
+  blip(784, { type: 'triangle', dur: 0.08, vol: 0.05 });
+  blip(1175, { type: 'triangle', dur: 0.13, vol: 0.05, when: 0.07 });
+}
+
 export function playClick() {
   blip(700, { type: 'square', dur: 0.03, vol: 0.02 });
 }
