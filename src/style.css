@@ -83,9 +83,11 @@ body {
   gap: 12px;
   margin-bottom: 8px;
   width: 100%;
-  /* Sit above the overlay (z-index: 10) so the logo (home) and the sound /
-     palette / theme toggles stay clickable while the start / pause / game-over
-     menu is up — the overlay only covers the board and the play area. */
+  /* On roomy (desktop) screens, sit above the overlay (z-index: 10) so the logo
+     (home) and the sound / palette / theme toggles stay clickable while a menu
+     is up. Reverted on phones / short screens (see the media query below), where
+     the vertically-centred layout would otherwise let the header float into the
+     middle and overlap the centred menu. */
   position: relative;
   z-index: 11;
 }
@@ -662,6 +664,13 @@ canvas {
     padding: 28px 18px;
     padding: max(28px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
              max(28px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  }
+  /* Don't raise the header here: on these compact, vertically-centred layouts it
+     would float into the middle of the screen and overlap the centred menu. Let
+     the full-screen overlay cover it instead (matches the prior mobile look). */
+  .header {
+    position: static;
+    z-index: auto;
   }
   /* Fluid form + mode rows so long labels ("Submit score") never wrap and
      inputs shrink to fit instead of overflowing. */
