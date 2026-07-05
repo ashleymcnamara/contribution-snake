@@ -392,13 +392,22 @@ async function startRun(selectedMode) {
         : 'Snake graph') + variantTag;
 
   hideOverlay();
-  state = 'playing';
+  state = 'resuming';
   setTouchControls(true);
   updatePauseButton();
   updateUI();
   announce(`${MODE_LABELS[mode]} started.`);
-  lastTime = performance.now();
-  requestAnimationFrame(tick);
+  // Open every run on the same 3-2-1 as resume, so you're never dropped
+  // straight onto a moving snake. The board is drawn frozen underneath.
+  draw(renderer, game, null, 1, { monthLabels, ghost });
+  runCountdown(() => {
+    if (state !== 'resuming') return; // aborted (navigated away / restarted)
+    state = 'playing';
+    updatePauseButton();
+    lastTime = performance.now();
+    accumulator = 0;
+    requestAnimationFrame(tick);
+  });
 }
 
 function handleStepEvents(ev) {
