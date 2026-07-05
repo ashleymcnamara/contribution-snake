@@ -83,6 +83,11 @@ body {
   gap: 12px;
   margin-bottom: 8px;
   width: 100%;
+  /* Sit above the overlay (z-index: 10) so the logo (home) and the sound /
+     palette / theme toggles stay clickable while the start / pause / game-over
+     menu is up — the overlay only covers the board and the play area. */
+  position: relative;
+  z-index: 11;
 }
 
 .site-title {
@@ -321,8 +326,12 @@ canvas {
   color: var(--text-muted);
 }
 
+/* Fixed to the viewport (not absolute within .canvas-wrapper) so the start /
+   pause / game-over menu always fills the screen and is never clipped by a
+   short board — e.g. the wide, 7-row "Play your graph" board, whose wrapper
+   is only ~150px tall and would otherwise hide "Play again" below the fold. */
 .overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
   display: flex;
   background: color-mix(in srgb, var(--bg) 88%, transparent);
@@ -332,8 +341,8 @@ canvas {
   overflow-y: auto;
 }
 
-/* margin:auto centers when there's room and top-aligns (scrollable) when the
-   overlay is taller than the board — e.g. the 7-row graph-mode board. */
+/* margin:auto centers the menu in the viewport, and top-aligns it (with the
+   overlay scrolling) when the content is taller than the screen. */
 .overlay-inner {
   margin: auto;
   display: flex;
@@ -646,12 +655,10 @@ canvas {
 }
 
 @media (max-width: 640px), (max-height: 640px) {
-  /* Narrow / short screens scale the board down (renderer fits it to the
-     viewport), so give the start / menu / game-over overlay the full viewport
-     instead of trapping it inside the small board box. Safe: the overlay is
-     hidden during play. Covers portrait phones (width) and landscape (height). */
+  /* The overlay is viewport-fixed everywhere (see .overlay); on phones just
+     grow its padding and keep it clear of notches / the home indicator.
+     Covers portrait phones (width) and landscape (height). */
   .overlay {
-    position: fixed;
     padding: 28px 18px;
     padding: max(28px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
              max(28px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
