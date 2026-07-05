@@ -131,6 +131,10 @@ function showOverlay(title, sub, sections = []) {
   // (and out of the layout, so the board can reclaim the space) on every menu,
   // game-over, leaderboard and pause screen.
   setTouchControls(false);
+  // Move focus with the content so keyboard / screen-reader users aren't
+  // stranded on a control that just became hidden (focus would fall to <body>
+  // and reading position would jump back to the top of the page).
+  $('overlay-title').focus({ preventScroll: true });
 }
 
 function hideOverlay() {
@@ -235,6 +239,21 @@ function showStartScreen() {
     $('btn-graph').disabled = false;
   }
   updateDailyNote();
+}
+
+// Clicking the logo returns to the start menu from any state (playing, spectating,
+// death animation) and normalizes the URL so a later refresh also lands home.
+function goHome(e) {
+  if (e) {
+    // Let cmd/ctrl/shift/middle-click open a fresh instance in a new tab.
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+  }
+  const base = import.meta.env.BASE_URL || '/';
+  if (location.pathname !== base || location.search) {
+    history.replaceState(null, '', base);
+  }
+  showStartScreen();
 }
 
 // Countdown to the next daily board + today's result badge.
@@ -875,6 +894,8 @@ $('btn-graph').addEventListener('click', () => {
 $('user-row').addEventListener('submit', (e) => { e.preventDefault(); audio.unlock(); startGraphRun(); });
 $('btn-again').addEventListener('click', () => startRun(mode));
 $('btn-menu').addEventListener('click', showStartScreen);
+$('home-link').setAttribute('href', import.meta.env.BASE_URL || '/');
+$('home-link').addEventListener('click', goHome);
 $('btn-share').addEventListener('click', () => downloadCard(currentShareCard()));
 $('btn-copy').addEventListener('click', copyResult);
 $('share-x').addEventListener('click', () => shareToNetwork('x'));
