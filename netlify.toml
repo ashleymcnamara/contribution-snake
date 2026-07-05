@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# `netlify dev` serves the Vite dev server with functions + local Blobs
+# emulation on one origin.
+[dev]
+  command = "npm run dev:web"
+  targetPort = 5173
+  port = 8888
