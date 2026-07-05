@@ -174,6 +174,18 @@ canvas {
   touch-action: none;
 }
 
+/* "Play your own" escape hatch shown below the board while watching a shared
+   replay, so viewers aren't stuck spectating. Placed under the board (not over
+   it) so it never occludes the playback — graph/daily boards are only 7 rows. */
+.spectate-cta {
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.spectate-cta:not([hidden]) {
+  display: flex;
+}
+
 .legend {
   display: flex;
   align-items: center;
