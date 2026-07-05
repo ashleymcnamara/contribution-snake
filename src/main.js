@@ -259,6 +259,7 @@ async function startRun(selectedMode) {
   submitted = false;
   lastRank = null;
   lastReplayId = null;
+  sharedReplay = null;
   ghost = null;
   spect = null;
   monthLabels = mode === 'graph' ? graphData.months : null;
@@ -429,6 +430,7 @@ function beginSpectate(data, { label, returnTo = 'leaderboard' } = {}) {
   accumulator = 0;
   $('board-label').textContent = label;
   hideOverlay();
+  $('spectate-cta').hidden = false;
   state = 'spectating';
   updatePauseButton();
   announce(`Watching ${data.name}'s run.`);
@@ -442,6 +444,8 @@ async function startSpectate(replayId, { returnTo = 'leaderboard' } = {}) {
     lastWatched = { name: data.name, score: data.score };
     if (returnTo === 'share') {
       sharedReplay = { id: replayId, name: data.name, score: data.score };
+    } else {
+      sharedReplay = null;
     }
     beginSpectate(data, {
       label: `Watching ${data.name} · ${data.score} pts — Esc or tap to exit`,
@@ -495,21 +499,28 @@ function spectateTick(now) {
   requestAnimationFrame(spectateTick);
 }
 
-function exitSpectate() {
+// Land on the start menu after a shared run, keeping a one-tap "watch again"
+// for the playback the viewer just enjoyed.
+function showShareMenu() {
+  showStartScreen();
+  if (sharedReplay) {
+    $('overlay-sub').textContent =
+      `That was ${sharedReplay.name}'s ${sharedReplay.score}-point run. Your turn — pick a mode and beat it.`;
+    const again = $('btn-watch-shared');
+    again.textContent = `Watch ${sharedReplay.name}'s run again`;
+    again.hidden = false;
+  }
+}
+
+function exitSpectate({ toMenu = false } = {}) {
   spect = null;
   state = 'idle';
   $('board-label').textContent = 'Snake graph';
-  if (spectReturn === 'share') {
-    // Shared-link viewers land on the menu so they can play their own run —
-    // with a one-tap "watch again" for the playback they just enjoyed.
-    showStartScreen();
-    if (sharedReplay) {
-      $('overlay-sub').textContent =
-        `That was ${sharedReplay.name}'s ${sharedReplay.score}-point run. Your turn — pick a mode and beat it.`;
-      const again = $('btn-watch-shared');
-      again.textContent = `Watch ${sharedReplay.name}'s run again`;
-      again.hidden = false;
-    }
+  $('spectate-cta').hidden = true;
+  // The on-screen "Play your own" button forces the menu; a shared run lands
+  // there too, while leaderboard watchers go back to the standings.
+  if (toMenu || spectReturn === 'share') {
+    showShareMenu();
     return;
   }
   if (spectReturn === 'start') {
@@ -865,6 +876,7 @@ $('btn-watch-best').addEventListener('click', watchLocalBest);
 $('btn-watch-shared').addEventListener('click', () => {
   if (sharedReplay) startSpectate(sharedReplay.id, { returnTo: 'share' });
 });
+$('btn-play-own').addEventListener('click', () => exitSpectate({ toMenu: true }));
 $('btn-stats').addEventListener('click', showStatsScreen);
 $('stats-back').addEventListener('click', showStartScreen);
 $('var-wrap').addEventListener('change', (e) => {
