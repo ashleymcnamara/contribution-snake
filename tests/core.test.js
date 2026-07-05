@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   createGame, queueInput, step, replayGame, validateInputLog,
-  STREAK_WINDOW, BASE_SPEED,
+  STREAK_WINDOW, BASE_SPEED, MIN_SPEED,
 } from '../src/game/core.js';
 import { playBotRun } from './helpers.js';
 
@@ -89,6 +89,32 @@ describe('graph mode', () => {
     expect(ev.won).toBe(true);
     expect(game.won).toBe(true);
     expect(game.score).toBe(20); // level-4 cell
+  });
+
+  it('ramps speed by cells cleared, not score — a dense graph stays calm early', () => {
+    // Fill the whole board so the snake eats a cell on every step (worst case).
+    const grid = Array.from({ length: 52 }, () => new Array(7).fill(4));
+    const game = createGame({ mode: 'graph', seed: 1, graph: grid });
+    for (let i = 0; i < 5; i++) step(game); // ~5 of ~359 cells (~1.4% cleared)
+    // Score has snowballed well past a level's worth (the old score-based ramp
+    // would have sped up by now), but progress is tiny so the pace stays calm.
+    expect(game.score).toBeGreaterThan(50);
+    expect(game.level).toBe(1);
+    expect(game.speed).toBe(BASE_SPEED);
+  });
+
+  it('reaches MIN_SPEED only in the final stretch of the board', () => {
+    const grid = Array.from({ length: 52 }, () => new Array(7).fill(0));
+    const probe = createGame({ mode: 'graph', seed: 1, graph: grid });
+    const { x, y } = probe.snake[0];
+    const N = 20;
+    for (let k = 1; k <= N; k++) grid[x + k][y] = 1; // straight run in the path
+    const game = createGame({ mode: 'graph', seed: 1, graph: grid });
+    expect(game.totalCells).toBe(N);
+    expect(game.speed).toBe(BASE_SPEED); // starts calm
+    for (let i = 0; i < 18; i++) step(game); // clear 90%
+    expect(game.won).toBe(false);
+    expect(game.speed).toBe(MIN_SPEED); // fast finish
   });
 });
 
