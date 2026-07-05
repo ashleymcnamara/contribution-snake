@@ -13,7 +13,7 @@ import {
   buildShareCard, downloadCard, shareText, gameUrl, shareLinks, nativeShare,
 } from './share.js';
 import { icons } from './icons.js';
-import { ACHIEVEMENTS, loadUnlocked, evaluate as evaluateAchievements } from './achievements.js';
+import { ACHIEVEMENTS, loadUnlocked, reconcileUnlocked, evaluate as evaluateAchievements } from './achievements.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1108,6 +1108,9 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
 
 // --- boot ---
 (async function boot() {
+  // One-time: re-lock the achievements whose bars were raised so they're re-earned.
+  reconcileUnlocked();
+
   $('theme-btn').innerHTML = themeName === 'dark' ? icons.moon : icons.sun;
   $('palette-btn').innerHTML = icons.palette;
   $('sound-btn').innerHTML = audio.isMuted() ? icons.volumeOff : icons.volumeOn;
