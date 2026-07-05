@@ -16,6 +16,26 @@ const PACING_TOLERANCE = 0.85;
 
 export const todayUTC = () => new Date().toISOString().slice(0, 10);
 
+// Short, URL-friendly replay IDs keep share links tiny
+// (yetanothersnake.dev/r/Ab3xK9pQ) instead of a 36-char UUID. Collision-checked
+// against the store; the validator still accepts legacy UUID links too.
+const ID_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const REPLAY_ID_RE = /^[0-9A-Za-z-]{6,40}$/;
+
+function shortId(len = 8) {
+  let s = '';
+  for (let i = 0; i < len; i++) s += ID_ALPHABET[randomInt(ID_ALPHABET.length)];
+  return s;
+}
+
+async function freshReplayId(store) {
+  for (let i = 0; i < 5; i++) {
+    const id = shortId();
+    if (!(await store.getReplay(id))) return id;
+  }
+  return shortId(12); // vanishingly unlikely fallback
+}
+
 export function dailySeed(day, secret) {
   const hash = createHash('sha256').update(day + secret).digest();
   return hash.readUInt32BE(0) & 0x7fffffff;
@@ -106,7 +126,7 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
   }
 
   const cleanName = sanitizeName(name);
-  const id = randomUUID();
+  const id = await freshReplayId(store);
   await store.putReplay(id, {
     seed: Number(session.seed),
     mode: session.mode,
@@ -140,7 +160,7 @@ export async function leaderboard(store, { mode: rawMode, day: rawDay }) {
 }
 
 export async function replay(store, id) {
-  if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/.test(id)) {
+  if (typeof id !== 'string' || !REPLAY_ID_RE.test(id)) {
     return { status: 400, body: { error: 'Bad replay id.' } };
   }
   const data = await store.getReplay(id);
