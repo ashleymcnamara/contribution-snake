@@ -1,8 +1,15 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-/* Snappier taps on mobile: no double-tap-zoom / 300ms delay on controls. */
+/* Kill accidental double-tap-to-zoom across the whole page. Intentional
+   pinch-zoom still works (manipulation only disables the double-tap gesture),
+   so accessibility zoom is preserved. */
+html, body { touch-action: manipulation; }
+
+/* Snappier, cleaner taps on mobile: no double-tap-zoom / 300ms tap delay, and
+   no laggy grey tap-flash — controls provide their own :active feedback below. */
 .btn, .icon-btn, .linklike, .touch-btn, .variant-toggle, input, button {
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* Sections are toggled via the hidden attribute; make sure it always wins
@@ -116,9 +123,11 @@ body {
   font-size: 13px;
   line-height: 1;
   padding: 0;
+  transition: transform 0.06s ease, filter 0.1s;
 }
 
 .icon-btn:hover { filter: brightness(1.25); }
+.icon-btn:active { background: var(--border); transform: scale(0.9); }
 .icon-btn:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -275,10 +284,11 @@ canvas {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.06s ease;
 }
 
 .btn:hover { background: var(--btn-bg-hover); }
+.btn:active { transform: scale(0.97); }
 .btn:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -377,7 +387,9 @@ canvas {
   color: var(--text);
   padding: 8px 12px;
   font-family: inherit;
-  font-size: 14px;
+  /* 16px keeps iOS from auto-zooming the whole page in when the field is
+     focused (it zooms any input under 16px). */
+  font-size: 16px;
   width: 190px;
 }
 
@@ -512,9 +524,10 @@ canvas {
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+  transition: transform 0.06s ease, background 0.06s ease;
 }
 
-.touch-btn:active { background: var(--border); }
+.touch-btn:active { background: var(--border); transform: scale(0.92); }
 
 .touch-row {
   display: flex;
@@ -525,6 +538,9 @@ canvas {
 @media (pointer: coarse) {
   .touch-controls { display: grid; }
   .controls-hint { display: none; }
+  /* Bigger, easier-to-hit header buttons on touch devices (30px is too small
+     a tap target — missed taps feel unresponsive). */
+  .icon-btn { width: 40px; height: 40px; font-size: 16px; }
 }
 
 /* Landscape phones are too short to stack a board and a d-pad. Float the d-pad
