@@ -35,6 +35,13 @@ let graphData = null; // { username, grid, months, total }
 let monthLabels = null;
 let lastTime = 0;
 let accumulator = 0;
+// Cap catch-up steps per animation frame. Without this a slow frame (GC, a
+// background tab, a heavy machine) lets the accumulator fast-forward several
+// steps at once — and since only the last step is interpolated, the snake
+// visibly teleports across cells. Clamping turns a hitch into a tiny pause
+// instead of a multi-cell skip; leftover backlog is dropped (below) so a
+// persistently slow frame can't spiral.
+const MAX_STEPS_PER_FRAME = 2;
 let serverOk = false;
 let submitted = false;
 let lastRank = null;
@@ -461,13 +468,17 @@ function tick(now) {
 
   if (ghost) advanceGhost(dt);
 
-  while (accumulator >= game.speed) {
+  let steps = 0;
+  while (accumulator >= game.speed && steps < MAX_STEPS_PER_FRAME) {
     prevSnake = game.snake.map((s) => ({ ...s }));
     const ev = step(game);
     handleStepEvents(ev);
     if (state !== 'playing') return;
     accumulator -= game.speed;
+    steps++;
   }
+  // Drop any backlog we didn't consume so the next frame doesn't teleport.
+  if (accumulator > game.speed) accumulator = game.speed;
 
   const alpha = Math.min(1, accumulator / game.speed);
   draw(renderer, game, prevSnake, alpha, { monthLabels, ghost, showCombo: true });
@@ -550,7 +561,8 @@ function spectateTick(now) {
   lastTime = now;
   accumulator += dt;
 
-  while (accumulator >= game.speed && game.alive && !game.won) {
+  let steps = 0;
+  while (accumulator >= game.speed && game.alive && !game.won && steps < MAX_STEPS_PER_FRAME) {
     prevSnake = game.snake.map((s) => ({ ...s }));
     while (spect.ptr < spect.inputs.length && spect.inputs[spect.ptr].s === game.stepCount) {
       queueInput(game, spect.inputs[spect.ptr].d, false);
@@ -562,7 +574,9 @@ function spectateTick(now) {
       spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
     }
     accumulator -= game.speed;
+    steps++;
   }
+  if (accumulator > game.speed) accumulator = game.speed;
 
   if (!game.alive || game.won) {
     // Hold the final frame briefly, then return to the leaderboard.
