@@ -300,10 +300,13 @@ function updateDailyNote() {
   const s = Math.floor((msLeft % 60000) / 1000);
   const countdown = h > 0 ? `${h}h ${m}m` : `${m}m ${String(s).padStart(2, '0')}s`;
   const played = JSON.parse(localStorage.getItem(`gh-snake-daily-${day}`) || 'null');
-  const badge = played
-    ? ` · ✓ ${played.score} pts${played.rank ? ` (#${played.rank})` : ''}`
-    : '';
-  el.textContent = `New board in ${countdown}${badge}`;
+  let badge = '';
+  if (played) {
+    const score = Number(played.score) || 0;
+    const rank = Number(played.rank) || 0;
+    badge = ` · <span class="daily-done">${icons.check}</span> ${score} pts${rank ? ` (#${rank})` : ''}`;
+  }
+  el.innerHTML = `New board in ${countdown}${badge}`;
   el.hidden = false;
 }
 
@@ -768,8 +771,19 @@ function escapeHtml(s) {
   ));
 }
 
+function setActiveTab(activeId) {
+  for (const id of ['lb-tab-classic', 'lb-tab-daily', 'lb-tab-yesterday']) {
+    const btn = $(id);
+    const on = id === activeId;
+    btn.classList.toggle('active', on);
+    if (on) btn.setAttribute('aria-current', 'true');
+    else btn.removeAttribute('aria-current');
+  }
+}
+
 function showLeaderboardScreen() {
   showOverlay('Leaderboard', 'Server-verified scores.', ['lb-tabs', 'leaderboard']);
+  setActiveTab('lb-tab-classic');
   renderLeaderboard('classic');
 }
 
@@ -802,7 +816,7 @@ function showAchievementsScreen() {
         <div class="achv-name">${escapeHtml(a.name)}</div>
         <div class="achv-desc">${escapeHtml(a.desc)}</div>
       </div>
-      ${got ? '<span class="achv-check" aria-hidden="true">✓</span>' : ''}
+      ${got ? `<span class="achv-check" aria-hidden="true">${icons.check}</span>` : ''}
     </div>`;
   }).join('');
   showOverlay('Achievements', `${unlocked.size} of ${ACHIEVEMENTS.length} unlocked`,
@@ -1008,10 +1022,11 @@ $('share-threads').addEventListener('click', () => shareToNetwork('threads'));
 $('share-native').addEventListener('click', shareNative);
 $('submit-row').addEventListener('submit', (e) => { e.preventDefault(); handleSubmit(); });
 $('btn-leaderboard').addEventListener('click', showLeaderboardScreen);
-$('lb-tab-classic').addEventListener('click', () => renderLeaderboard('classic'));
-$('lb-tab-daily').addEventListener('click', () => renderLeaderboard('daily'));
+$('lb-tab-classic').addEventListener('click', () => { setActiveTab('lb-tab-classic'); renderLeaderboard('classic'); });
+$('lb-tab-daily').addEventListener('click', () => { setActiveTab('lb-tab-daily'); renderLeaderboard('daily'); });
 $('lb-tab-yesterday').addEventListener('click', () => {
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  setActiveTab('lb-tab-yesterday');
   renderLeaderboard('daily', yesterday);
 });
 $('lb-back').addEventListener('click', showStartScreen);
