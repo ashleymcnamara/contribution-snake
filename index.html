@@ -91,6 +91,7 @@
           <button class="btn" type="submit">Play</button>
         </form>
         <button class="linklike" id="btn-leaderboard">Leaderboard</button>
+        <button class="linklike" id="btn-watch-shared" hidden>Watch again</button>
         <button class="linklike" id="btn-watch-best" hidden>Watch your best run</button>
         <button class="linklike" id="btn-stats" hidden>Stats</button>
 
@@ -115,10 +116,10 @@
         </div>
         <div class="share-row" id="share-row" hidden>
           <span class="share-label">Share:</span>
-          <button class="btn btn-secondary btn-compact" id="share-native" hidden>Share…</button>
-          <button class="btn btn-secondary btn-compact" id="share-x">X</button>
-          <button class="btn btn-secondary btn-compact" id="share-bluesky">Bluesky</button>
-          <button class="btn btn-secondary btn-compact" id="share-threads">Threads</button>
+          <button class="btn btn-secondary btn-icon" id="share-native" aria-label="Share…" title="Share…" hidden></button>
+          <button class="btn btn-secondary btn-icon" id="share-x" aria-label="Share on X" title="Share on X"></button>
+          <button class="btn btn-secondary btn-icon" id="share-bluesky" aria-label="Share on Bluesky" title="Share on Bluesky"></button>
+          <button class="btn btn-secondary btn-icon" id="share-threads" aria-label="Share on Threads" title="Share on Threads"></button>
         </div>
 
         <!-- Leaderboard panel -->

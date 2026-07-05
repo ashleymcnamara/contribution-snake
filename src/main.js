@@ -39,6 +39,7 @@ let submitted = false;
 let lastRank = null;
 let lastReplayId = null;
 let lastWatched = null; // { name, score } when arriving via a share link
+let sharedReplay = null; // { id, name, score } for the "watch again" button
 // Translucent replay opponent racing on the daily board:
 // { game, inputs, ptr, acc, prevSnake, alpha, name }
 let ghost = null;
@@ -117,9 +118,9 @@ function updatePauseButton() {
 }
 
 // --- overlay management ---
-const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-watch-best',
-  'btn-stats', 'stats-panel', 'stats-back', 'btn-resume', 'submit-row', 'over-actions',
-  'share-row', 'lb-tabs', 'leaderboard', 'over-stats'];
+const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-watch-shared',
+  'btn-watch-best', 'btn-stats', 'stats-panel', 'stats-back', 'btn-resume', 'submit-row',
+  'over-actions', 'share-row', 'lb-tabs', 'leaderboard', 'over-stats'];
 
 function showOverlay(title, sub, sections = []) {
   $('overlay-title').textContent = title;
@@ -435,12 +436,16 @@ function beginSpectate(data, { label, returnTo = 'leaderboard' } = {}) {
   requestAnimationFrame(spectateTick);
 }
 
-async function startSpectate(replayId) {
+async function startSpectate(replayId, { returnTo = 'leaderboard' } = {}) {
   try {
     const data = await api.getReplay(replayId);
     lastWatched = { name: data.name, score: data.score };
+    if (returnTo === 'share') {
+      sharedReplay = { id: replayId, name: data.name, score: data.score };
+    }
     beginSpectate(data, {
       label: `Watching ${data.name} · ${data.score} pts — Esc or tap to exit`,
+      returnTo,
     });
   } catch (err) {
     $('overlay-sub').textContent = `Couldn't load the replay: ${err.message}`;
@@ -494,6 +499,19 @@ function exitSpectate() {
   spect = null;
   state = 'idle';
   $('board-label').textContent = 'Snake graph';
+  if (spectReturn === 'share') {
+    // Shared-link viewers land on the menu so they can play their own run —
+    // with a one-tap "watch again" for the playback they just enjoyed.
+    showStartScreen();
+    if (sharedReplay) {
+      $('overlay-sub').textContent =
+        `That was ${sharedReplay.name}'s ${sharedReplay.score}-point run. Your turn — pick a mode and beat it.`;
+      const again = $('btn-watch-shared');
+      again.textContent = `Watch ${sharedReplay.name}'s run again`;
+      again.hidden = false;
+    }
+    return;
+  }
   if (spectReturn === 'start') {
     showStartScreen();
     return;
@@ -844,6 +862,9 @@ $('lb-tab-yesterday').addEventListener('click', () => {
 });
 $('lb-back').addEventListener('click', showStartScreen);
 $('btn-watch-best').addEventListener('click', watchLocalBest);
+$('btn-watch-shared').addEventListener('click', () => {
+  if (sharedReplay) startSpectate(sharedReplay.id, { returnTo: 'share' });
+});
 $('btn-stats').addEventListener('click', showStatsScreen);
 $('stats-back').addEventListener('click', showStartScreen);
 $('var-wrap').addEventListener('change', (e) => {
@@ -918,7 +939,10 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
   $('theme-btn').innerHTML = themeName === 'dark' ? icons.moon : icons.sun;
   $('palette-btn').innerHTML = icons.palette;
   $('sound-btn').innerHTML = audio.isMuted() ? icons.volumeOff : icons.volumeOn;
-  $('share-native').innerHTML = `${icons.share}<span>Share…</span>`;
+  $('share-native').innerHTML = icons.share;
+  $('share-x').innerHTML = icons.x;
+  $('share-bluesky').innerHTML = icons.bluesky;
+  $('share-threads').innerHTML = icons.threads;
   document.querySelectorAll('.touch-btn[data-dir]').forEach((btn) => {
     btn.innerHTML = [icons.up, icons.right, icons.down, icons.left][btn.dataset.dir];
   });
@@ -937,8 +961,8 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
   // interaction stays a deliberate click (and unlocks audio).
   const params = new URLSearchParams(location.search);
   const watchId = params.get('watch');
-  if (watchId && /^[a-f0-9-]{36}$/.test(watchId) && serverOk) {
-    startSpectate(watchId);
+  if (watchId && /^[0-9A-Za-z-]{6,40}$/.test(watchId) && serverOk) {
+    startSpectate(watchId, { returnTo: 'share' });
     return;
   }
   const linkedUser = params.get('user');

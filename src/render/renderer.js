@@ -49,7 +49,9 @@ export function resizeBoard(r, cols, rows) {
   r.canvas.width = Math.round(r.w * dpr);
   r.canvas.height = Math.round(r.h * dpr);
   r.canvas.style.width = r.w + 'px';
-  r.canvas.style.height = r.h + 'px';
+  // Let CSS derive height from the intrinsic ratio so `max-width:100%` scales
+  // the board proportionally on narrow screens instead of squishing it.
+  r.canvas.style.height = 'auto';
   r.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 

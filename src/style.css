@@ -138,17 +138,6 @@ body {
   display: block;
 }
 
-#share-native {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-#share-native svg {
-  width: 12px;
-  height: 12px;
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -406,10 +395,15 @@ canvas {
   color: var(--text-muted);
 }
 
-.btn-compact {
-  padding: 5px 10px;
-  font-size: 12px;
+.btn-icon {
+  padding: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
 }
+
+.btn-icon svg { display: block; width: 16px; height: 16px; }
 
 .leaderboard {
   width: min(340px, 90%);
@@ -511,4 +505,34 @@ canvas {
 @media (pointer: coarse) {
   .touch-controls { display: grid; }
   .controls-hint { display: none; }
+}
+
+@media (max-width: 640px) {
+  /* Narrow screens scale the board down (renderer uses height:auto), so give
+     the start / menu / game-over overlay the full viewport instead of trapping
+     it inside the short board box. Safe: the overlay is hidden during play. */
+  .overlay {
+    position: fixed;
+    padding: 28px 18px;
+  }
+  /* Fluid form + mode rows so long labels ("Submit score") never wrap and
+     inputs shrink to fit instead of overflowing. */
+  .mode-buttons {
+    min-width: 0;
+    width: min(320px, 82vw);
+  }
+  .input-row {
+    width: min(320px, 82vw);
+  }
+  .input-row input {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  /* Keep the action button at its one-line width; let the input absorb the
+     shrink so labels like "Submit score" don't wrap. */
+  .input-row .btn {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
 }
