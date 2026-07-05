@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 
 test('classic run: play, die, submit, verified leaderboard entry', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#overlay-title')).toHaveText('GitHub Snake');
+  await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
 
   await page.click('#btn-classic');
   // Unattended, the snake hits the wall in ~2s; death animation follows.
@@ -81,5 +81,5 @@ test('stats panel appears after a finished run', async ({ page }) => {
   await page.click('#btn-stats');
   await expect(page.locator('#stats-panel')).toContainText('games played');
   await page.click('#stats-back');
-  await expect(page.locator('#overlay-title')).toHaveText('GitHub Snake');
+  await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
 });
