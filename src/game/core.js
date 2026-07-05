@@ -18,6 +18,9 @@ export const GRAPH_ROWS = 7;
 export const BASE_SPEED = 120; // ms per step at level 1
 export const MIN_SPEED = 50;
 const START_LENGTH = 5;
+// Level at which the speed ramp bottoms out at MIN_SPEED
+// (BASE_SPEED - (SPEED_LEVELS - 1) * 8 <= MIN_SPEED).
+const SPEED_LEVELS = 10;
 // Steps (not wall-clock) between food pickups that keep a streak alive.
 // Tick-based so pausing can't break a streak and replays are deterministic.
 export const STREAK_WINDOW = 40;
@@ -151,7 +154,7 @@ function onEat(state, basePoints) {
   state.score += points;
   state.stepsSinceFood = 0;
 
-  const newLevel = Math.floor(state.score / 50) + 1;
+  const newLevel = graphLevelFrom(state);
   let levelUp = false;
   if (newLevel > state.level) {
     state.level = newLevel;
@@ -159,6 +162,19 @@ function onEat(state, basePoints) {
     levelUp = true;
   }
   return { points, levelUp };
+}
+
+// How fast the game runs. Classic/daily ramp with raw score. Graph mode ramps
+// with how much of the board you've *cleared*, not score — otherwise a dense
+// graph (hundreds of adjacent cells) snowballs the multiplier and slams into
+// MIN_SPEED within a couple of seconds, which feels frantic and glitchy. Tying
+// it to progress paces every graph, dense or sparse, from calm to a fast finish
+// (top speed over the final ~10% of cells).
+function graphLevelFrom(state) {
+  if (state.mode !== 'graph') return Math.floor(state.score / 50) + 1;
+  if (!state.totalCells) return SPEED_LEVELS;
+  const cleared = (state.totalCells - state.cells.size) / state.totalCells;
+  return Math.min(SPEED_LEVELS, Math.floor(cleared * SPEED_LEVELS) + 1);
 }
 
 // Advance one tick. Returns an event object the UI uses for effects/sound.
