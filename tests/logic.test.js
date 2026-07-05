@@ -26,7 +26,7 @@ describe('score submission', () => {
     expect(res.status).toBe(200);
     expect(res.body.score).toBe(run.score);
     expect(res.body.rank).toBe(1);
-    expect(res.body.replayId).toBeTruthy();
+    expect(res.body.replayId).toMatch(/^[0-9A-Za-z]{8}$/); // short, URL-friendly share id
 
     const board = await logic.leaderboard(store, { mode: 'classic' });
     expect(board.body.entries).toHaveLength(1);
