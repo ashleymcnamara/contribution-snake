@@ -41,10 +41,13 @@ test('theme, palette, and pause controls', async ({ page }) => {
     getComputedStyle(document.documentElement).getPropertyValue('--level-4').trim());
   expect(blueLevel).not.toBe(greenLevel);
 
-  // Pause and resume mid-game. Starting is async (session fetch), so wait
-  // for the overlay to actually hide before pausing.
+  // Pause and resume mid-game. Starting is async (session fetch) and now opens
+  // with a 3-2-1 countdown, so wait for the overlay to hide and the countdown
+  // to finish — the game isn't pausable until it's actually playing.
   await page.click('#btn-classic');
   await expect(page.locator('#overlay')).toBeHidden();
+  await expect(page.locator('#countdown')).toBeVisible();
+  await expect(page.locator('#countdown')).toBeHidden();
   await page.keyboard.press(' ');
   await expect(page.locator('#overlay-title')).toHaveText('Paused');
   await page.click('#btn-resume');
