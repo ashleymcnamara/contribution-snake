@@ -14,6 +14,7 @@ const brand = (inner) =>
 export const icons = {
   play: wrap('<path d="M5 3.5a.5.5 0 0 1 .77-.42l7 4.5a.5.5 0 0 1 0 .84l-7 4.5A.5.5 0 0 1 5 12.5v-9Z"/>'),
   pause: wrap('<rect x="3.5" y="3" width="3" height="10" rx="1"/><rect x="9.5" y="3" width="3" height="10" rx="1"/>'),
+  check: wrap('<path d="M3.5 8.5l3 3 6-7"/>', false),
   sun: wrap(
     '<circle cx="8" cy="8" r="3" fill="currentColor" stroke="none"/>' +
     '<path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/>',
