@@ -78,7 +78,7 @@ Forging a score would require finding an input sequence that plays that well *an
 
 ## Frontend
 
-Vite + vanilla JS modules, canvas rendering. Interpolated movement with a connected snake body, a visible combo-window meter, particles, screen shake, a WebAudio synth (no audio files), dark/light themes matching GitHub's palettes plus a colorblind-safe blue/orange palette (mirroring GitHub's own colorblind option), shareable 1200×630 game-over cards with your rank, auto-pause on tab switch, unlockable achievements, a 3-2-1 resume countdown, haptic feedback on touch devices, PWA/offline support, reduced-motion and screen-reader friendly. All icons are inline SVG.
+Vite + vanilla JS modules, canvas rendering. Interpolated movement with a connected snake body, a visible combo-window meter, particles, screen shake, a WebAudio synth (no audio files), dark/light themes matching GitHub's palettes plus a colorblind-safe blue/orange palette (mirroring GitHub's own colorblind option), shareable 1200×630 game-over cards with your rank, auto-pause on tab switch, unlockable achievements, a 3-2-1 countdown before every run and on resume, haptic feedback on touch devices, PWA/offline support, reduced-motion and screen-reader friendly. All icons are inline SVG.
 
 ```
 src/
