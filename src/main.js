@@ -826,7 +826,11 @@ document.querySelectorAll('.touch-btn[data-dir]').forEach((btn) => {
     e.preventDefault();
     if (state === 'playing') {
       audio.unlock();
-      queueInput(game, parseInt(btn.dataset.dir, 10));
+      // Only buzz when the input actually changes direction (queueInput returns
+      // false for duplicates / reversals), so rapid taps don't rattle.
+      if (queueInput(game, parseInt(btn.dataset.dir, 10)) && navigator.vibrate) {
+        navigator.vibrate(8);
+      }
     }
   }, { passive: false });
 });
