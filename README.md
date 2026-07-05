@@ -39,7 +39,7 @@ Without configuration the server reads contribution calendars from GitHub's publ
 
 Two unranked variants — **wrap walls** and **chill speed** — can be toggled on the start screen for classic and graph modes. Variant runs never create a server session, so they can't touch the leaderboard by construction.
 
-Click any leaderboard entry to **watch that run** — the server stores the input log of every verified score, and the client plays it back through the same deterministic core. A bot plays an attract-mode demo behind the start screen (disabled under reduced motion), and a local stats panel tracks your games, averages, and daily-challenge streak. **Unlockable achievements** reward milestones — your first game, a 100-point run, a 25-streak, clearing a whole graph, a 7-day daily streak — and pop a toast the moment you earn them.
+Click any leaderboard entry to **watch that run** — the server stores the input log of every verified score, and the client plays it back through the same deterministic core. A bot plays an attract-mode demo behind the start screen (disabled under reduced motion), and a local stats panel tracks your games, averages, and daily-challenge streak. **Unlockable achievements** reward milestones — your first game, a 100-point run, a 50-streak, clearing a whole graph, a 14-day daily streak — and pop a toast the moment you earn them.
 
 Game-over screens have one-tap sharing to X, Bluesky, and Threads (plus the native share sheet with the card image attached, where supported). Graph-mode shares deep-link to `?user=<name>`, so whoever clicks lands ready to play that exact graph; daily shares link to `?daily=1`.
 

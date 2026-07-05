@@ -6,25 +6,33 @@ import { achIcons } from './icons.js';
 
 const KEY = 'gh-snake-achievements';
 
+// Achievements whose thresholds were raised in the "harder achievements" update.
+// Existing players had these unlocked at the old, easier bars, so we clear them
+// once (guarded by RESET_KEY) to make them re-earn the tougher versions. Bump
+// RESET_TAG if the thresholds are ever re-tuned and another reset is wanted.
+const RESET_KEY = 'gh-snake-achievements-reset';
+const RESET_TAG = '2026-07-harder-v1';
+const BUFFED_IDS = ['committed', 'on-fire', 'combo-chain', 'unbroken', 'daily-devotee'];
+
 export const ACHIEVEMENTS = [
   { id: 'first-bite', icon: achIcons.firstBite, name: 'First Bite',
     desc: 'Play your first game.', test: (c) => c.stats.games >= 1 },
   { id: 'regular', icon: achIcons.regular, name: 'Regular',
     desc: 'Play 10 games.', test: (c) => c.stats.games >= 10 },
   { id: 'committed', icon: achIcons.committed, name: 'Committed',
-    desc: 'Play 50 games.', test: (c) => c.stats.games >= 50 },
+    desc: 'Play 100 games.', test: (c) => c.stats.games >= 100 },
   { id: 'century', icon: achIcons.century, name: 'Century',
     desc: 'Score 100 in a single run.', test: (c) => c.stats.bestScore >= 100 },
   { id: 'on-fire', icon: achIcons.onFire, name: 'On Fire',
-    desc: 'Score 200 in a single run.', test: (c) => c.stats.bestScore >= 200 },
+    desc: 'Score 400 in a single run.', test: (c) => c.stats.bestScore >= 400 },
   { id: 'combo-chain', icon: achIcons.comboChain, name: 'Combo Chain',
-    desc: 'Reach a 10 streak in one run.', test: (c) => c.stats.bestStreak >= 10 },
+    desc: 'Reach a 20 streak in one run.', test: (c) => c.stats.bestStreak >= 20 },
   { id: 'unbroken', icon: achIcons.unbroken, name: 'Unbroken',
-    desc: 'Reach a 25 streak in one run.', test: (c) => c.stats.bestStreak >= 25 },
+    desc: 'Reach a 50 streak in one run.', test: (c) => c.stats.bestStreak >= 50 },
   { id: 'full-year', icon: achIcons.fullYear, name: 'Full Year',
     desc: 'Clear an entire contribution graph.', test: (c) => !!c.run.won && c.run.mode === 'graph' },
   { id: 'daily-devotee', icon: achIcons.dailyDevotee, name: 'Daily Devotee',
-    desc: 'Keep a 7-day daily-challenge streak.', test: (c) => c.stats.dailyStreak >= 7 },
+    desc: 'Keep a 14-day daily-challenge streak.', test: (c) => c.stats.dailyStreak >= 14 },
   { id: 'rule-bender', icon: achIcons.ruleBender, name: 'Rule Bender',
     desc: 'Finish a run with a variant turned on.', test: (c) => !!c.run.variant },
 ];
@@ -35,6 +43,27 @@ export function loadUnlocked() {
     return new Set(Array.isArray(arr) ? arr : []);
   } catch {
     return new Set();
+  }
+}
+
+// One-time migration: clear the achievements whose thresholds were raised so
+// they must be re-earned at the tougher bars. Guarded by RESET_KEY so it runs
+// at most once per RESET_TAG. Returns the ids that were cleared. Call this once
+// on startup, before rendering the achievements panel or evaluating a run.
+export function reconcileUnlocked() {
+  try {
+    if (localStorage.getItem(RESET_KEY) === RESET_TAG) return [];
+    // Set the guard first so a later save failure can't cause a re-clear loop.
+    localStorage.setItem(RESET_KEY, RESET_TAG);
+    const set = loadUnlocked();
+    const cleared = [];
+    for (const id of BUFFED_IDS) {
+      if (set.has(id)) { set.delete(id); cleared.push(id); }
+    }
+    if (cleared.length) save(set);
+    return cleared;
+  } catch {
+    return [];
   }
 }
 
