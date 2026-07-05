@@ -1,3 +1,11 @@
+@font-face {
+  font-family: 'Mona Sans';
+  src: url('./fonts/mona-sans.woff2') format('woff2');
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 /* Kill accidental double-tap-to-zoom across the whole page. Intentional
@@ -15,6 +23,17 @@ html, body { touch-action: manipulation; }
 /* Sections are toggled via the hidden attribute; make sure it always wins
    over display rules like .input-row { display: flex }. */
 [hidden] { display: none !important; }
+
+/* Respect users who ask for less motion: the canvas already gates its own
+   effects (see renderer.js); this neutralizes CSS transitions/animations. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 :root {
   --bg: #0d1117;
@@ -66,16 +85,77 @@ body {
   width: 100%;
 }
 
-.header svg {
-  width: 32px;
-  height: 32px;
-  fill: var(--text);
+.site-title {
+  margin: 0;
+  line-height: 1;
+  font-size: 0; /* wrapper only; the brand lockup carries the visual title */
 }
 
-.header h1 {
-  font-size: 20px;
-  font-weight: 600;
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 4px;
+  margin: -2px -4px; /* keep alignment while giving the focus ring some room */
+  border-radius: 10px;
+  text-decoration: none;
   color: var(--text);
+}
+
+.brand:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .brand:hover { opacity: 0.85; }
+}
+
+.brand-icon {
+  height: 38px;
+  width: auto;
+  display: block;
+  flex: none;
+}
+
+/* The icon uses the same classic GitHub contribution ramp as the game board,
+   via the theme's CSS variables — so it stays legible on dark and light (and
+   follows the colorblind palette) instead of the snake sinking into the bg. */
+.brand-icon .l1 { fill: var(--level-1); }
+.brand-icon .l2 { fill: var(--level-2); }
+.brand-icon .l3 { fill: var(--level-3); }
+.brand-icon .l4 { fill: var(--level-4); }
+.brand-icon .eye { fill: var(--bg); }
+.brand-icon .tongue { fill: none; stroke: var(--level-4); stroke-width: 4px; }
+
+.brand-word {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  font-family: 'Mona Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.04;
+}
+
+.brand-word-top {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.brand-word-bottom {
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  color: var(--accent); /* matches the snake + board; adapts to theme and palette */
+  margin-right: -0.34em; /* cancel trailing tracking so it left-aligns with the word above */
+}
+
+@media (max-width: 430px) {
+  .brand { gap: 8px; }
+  .brand-icon { height: 32px; }
+  .brand-word-top { font-size: 16px; }
+  .brand-word-bottom { font-size: 10.5px; letter-spacing: 0.28em; margin-right: -0.28em; }
 }
 
 .header-actions {
@@ -267,6 +347,10 @@ canvas {
   font-weight: 700;
   color: var(--text);
 }
+
+/* The title is focused on each overlay change to move screen-reader / keyboard
+   focus with the content; it isn't an interactive control, so no visible ring. */
+.overlay-title:focus { outline: none; }
 
 .overlay-sub {
   font-size: 14px;
@@ -569,6 +653,8 @@ canvas {
   .overlay {
     position: fixed;
     padding: 28px 18px;
+    padding: max(28px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+             max(28px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
   }
   /* Fluid form + mode rows so long labels ("Submit score") never wrap and
      inputs shrink to fit instead of overflowing. */
