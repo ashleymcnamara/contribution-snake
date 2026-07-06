@@ -542,6 +542,11 @@ canvas {
   margin-top: 8px;
 }
 
+/* Breathing room so the unranked note doesn't crowd the toggle grid above. */
+#variant-note {
+  margin-top: 10px;
+}
+
 .variant-toggle {
   display: flex;
   align-items: center;
