@@ -6,13 +6,16 @@ import { achIcons } from './icons.js';
 
 const KEY = 'gh-snake-achievements';
 
-// Achievements whose thresholds were raised in the "harder achievements" update.
+// Achievements whose thresholds were raised in a "harder achievements" update.
 // Existing players had these unlocked at the old, easier bars, so we clear them
 // once (guarded by RESET_KEY) to make them re-earn the tougher versions. Bump
-// RESET_TAG if the thresholds are ever re-tuned and another reset is wanted.
+// RESET_TAG and set BUFFED_IDS to the ids raised in the latest bump whenever the
+// thresholds are re-tuned. v2 raises the score/streak bars that a dense
+// contribution graph — where food is everywhere and the streak multiplier
+// snowballs — would otherwise clear within seconds.
 const RESET_KEY = 'gh-snake-achievements-reset';
-const RESET_TAG = '2026-07-harder-v1';
-const BUFFED_IDS = ['committed', 'on-fire', 'combo-chain', 'unbroken', 'daily-devotee'];
+const RESET_TAG = '2026-07-harder-v2';
+const BUFFED_IDS = ['on-fire', 'combo-chain', 'unbroken'];
 
 // `progress` (optional) maps lifetime stats to [current, goal] so the UI can
 // show how close a locked achievement is. Event-based achievements (win a
@@ -30,14 +33,14 @@ export const ACHIEVEMENTS = [
     desc: 'Score 100 in a single run.', test: (c) => c.stats.bestScore >= 100,
     progress: (s) => [s.bestScore, 100] },
   { id: 'on-fire', icon: achIcons.onFire, name: 'On Fire',
-    desc: 'Score 400 in a single run.', test: (c) => c.stats.bestScore >= 400,
-    progress: (s) => [s.bestScore, 400] },
+    desc: 'Score 2000 in a single run.', test: (c) => c.stats.bestScore >= 2000,
+    progress: (s) => [s.bestScore, 2000] },
   { id: 'combo-chain', icon: achIcons.comboChain, name: 'Combo Chain',
-    desc: 'Reach a 20 streak in one run.', test: (c) => c.stats.bestStreak >= 20,
-    progress: (s) => [s.bestStreak, 20] },
+    desc: 'Reach a 40 streak in one run.', test: (c) => c.stats.bestStreak >= 40,
+    progress: (s) => [s.bestStreak, 40] },
   { id: 'unbroken', icon: achIcons.unbroken, name: 'Unbroken',
-    desc: 'Reach a 50 streak in one run.', test: (c) => c.stats.bestStreak >= 50,
-    progress: (s) => [s.bestStreak, 50] },
+    desc: 'Reach a 100 streak in one run.', test: (c) => c.stats.bestStreak >= 100,
+    progress: (s) => [s.bestStreak, 100] },
   { id: 'full-year', icon: achIcons.fullYear, name: 'Full Year',
     desc: 'Clear an entire contribution graph.', test: (c) => !!c.run.won && c.run.mode === 'graph' },
   { id: 'daily-devotee', icon: achIcons.dailyDevotee, name: 'Daily Devotee',
