@@ -527,7 +527,7 @@ canvas {
   content: '▸';
   display: inline-block;
   margin-right: 5px;
-  font-size: 10px;
+  font-size: 12px;
   transition: transform 0.12s ease;
 }
 .variant-details[open] summary::before { transform: rotate(90deg); }
