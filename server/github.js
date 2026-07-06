@@ -43,7 +43,7 @@ async function fetchViaGraphQL(username, token) {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
-      'User-Agent': 'contribution-snake',
+      'User-Agent': 'gitsnake',
     },
     body: JSON.stringify({ query, variables: { login: username } }),
   });
@@ -63,7 +63,7 @@ async function fetchViaGraphQL(username, token) {
 
 async function fetchViaScrape(username) {
   const res = await fetch(`https://github.com/users/${username}/contributions`, {
-    headers: { 'User-Agent': 'contribution-snake' },
+    headers: { 'User-Agent': 'gitsnake' },
   });
   if (res.status === 404) throw new Error('GitHub user not found');
   if (!res.ok) throw new Error(`GitHub returned ${res.status}`);

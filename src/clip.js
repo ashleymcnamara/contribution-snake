@@ -80,7 +80,7 @@ export function recordClip({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'contribution-snake-run.webm';
+    a.download = 'gitsnake-run.webm';
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000); // mirror share.js downloadCard
     resolveDone({ cancelled: false });
