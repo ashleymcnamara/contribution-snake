@@ -37,30 +37,18 @@ function drawBoard(ctx, game, theme, x, y, maxW, maxH) {
   }
 }
 
-export function buildShareCard({ game, theme, modeLabel, username }) {
-  const W = 1200;
-  const H = 630;
-  const canvas = document.createElement('canvas');
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext('2d');
+// Canonical social-card dimensions (OG-image sized) and the box the board is
+// laid out in. Shared so the static PNG and the animated WebM clip frame the
+// board identically.
+export const CARD_W = 1200;
+export const CARD_H = 630;
+export const CARD_BOARD = { x: 64, y: 300, w: CARD_W - 128, h: CARD_H - 300 - 56 };
 
-  ctx.fillStyle = theme.bg;
-  ctx.fillRect(0, 0, W, H);
-
-  // Header
-  ctx.fillStyle = theme.text;
-  ctx.font = `bold 44px ${FONT}`;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('GitSnake', 64, 52);
-  ctx.font = `26px ${FONT}`;
-  ctx.fillStyle = theme.textMuted;
-  ctx.fillText(username ? `${modeLabel} · @${username}` : modeLabel, 66, 112);
-
-  // Stats — the level slot gives way to golden commits when any were eaten
-  // (more interesting, and keeps the row from overflowing the card).
-  const stats = [
+// The run's headline numbers. The level slot gives way to golden commits when
+// any were eaten (more interesting, and keeps the row from overflowing the
+// card). Reused live by the clip recorder so the stats tick up as it plays.
+export function runStats(game) {
+  return [
     [String(game.score), 'contributions'],
     [String(game.bestStreak), 'best streak'],
     [String(game.snake.length), 'snake length'],
@@ -68,6 +56,23 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
       ? [String(game.goldenEaten), 'golden commits']
       : [String(game.level), 'level'],
   ];
+}
+
+// Brand header, stat row, and footer tagline — the parts of the card that wrap
+// the board. Drawn in the caller's current transform; the caller paints the
+// background and the board itself. Shared by the static PNG and the WebM clip.
+export function drawCardChrome(ctx, { theme, title = 'GitSnake', subtitle = '', stats = [], footer = null }) {
+  ctx.fillStyle = theme.text;
+  ctx.font = `bold 44px ${FONT}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(title, 64, 52);
+  if (subtitle) {
+    ctx.font = `26px ${FONT}`;
+    ctx.fillStyle = theme.textMuted;
+    ctx.fillText(subtitle, 66, 112);
+  }
+
   let sx = 64;
   for (const [value, label] of stats) {
     ctx.fillStyle = theme.accent;
@@ -79,13 +84,32 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
     sx += Math.max(ctx.measureText(label).width, ctx.measureText(value).width) + 200;
   }
 
-  // Final board
-  drawBoard(ctx, game, theme, 64, 300, W - 128, H - 300 - 56);
+  if (footer) {
+    ctx.fillStyle = theme.textMuted;
+    ctx.font = `20px ${FONT}`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText(footer, CARD_W - 64, CARD_H - 44);
+  }
+}
 
-  ctx.fillStyle = theme.textMuted;
-  ctx.font = `20px ${FONT}`;
-  ctx.textAlign = 'right';
-  ctx.fillText(game.won ? 'Ate the whole year.' : 'Don’t break the build.', W - 64, H - 44);
+export function buildShareCard({ game, theme, modeLabel, username }) {
+  const canvas = document.createElement('canvas');
+  canvas.width = CARD_W;
+  canvas.height = CARD_H;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, 0, CARD_W, CARD_H);
+
+  drawCardChrome(ctx, {
+    theme,
+    subtitle: username ? `${modeLabel} · @${username}` : modeLabel,
+    stats: runStats(game),
+    footer: game.won ? 'Ate the whole year.' : 'Don’t break the build.',
+  });
+
+  drawBoard(ctx, game, theme, CARD_BOARD.x, CARD_BOARD.y, CARD_BOARD.w, CARD_BOARD.h);
 
   return canvas;
 }

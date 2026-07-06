@@ -157,21 +157,32 @@ export function fitBoard(r) {
   }
 }
 
-// Size a renderer to the full logical board without measuring the document.
-// For offscreen recording: there is no layout to measure and the follow-camera
-// (which fitBoard can engage) must never kick in, so the whole board stays in
-// frame. dpr is fixed rather than read from the device so clip resolution is
-// stable regardless of the screen it was recorded on.
-export function sizeToBoard(r, cols, rows, dpr = 2) {
+// Size a renderer to a fixed social-share frame (default 1200×630, OG-image
+// sized) and center the board — scaled to fit `box` — inside it, rather than
+// cropping the canvas to the board. A thin graph strip would otherwise embed as
+// an ugly sliver on social feeds; this letterboxes it into a proper landscape
+// card. `chrome(ctx, game)` is drawn each frame in the card's device space (the
+// brand header + live stats), leaving the letterbox filled with the theme bg.
+// Only draw() when r.card is set follows this path; the on-screen renderer never
+// calls this, so its layout is untouched.
+export function sizeToCard(r, cols, rows, {
+  width = 1200, height = 630, dpr = 2, box = null, chrome = null,
+} = {}) {
   r.cols = cols;
   r.rows = rows;
   r.w = LABEL_LEFT + PAD + cols * STEP_PX + GAP + PAD;
   r.h = LABEL_TOP + PAD + rows * STEP_PX + GAP + PAD;
-  r.gridTheme = null; // force the grid cache to rebuild at the new size / dpr
+  r.gridTheme = null;
   r.camera = null; // whole board always in frame — no follow-camera offscreen
-  r.canvas.width = Math.round(r.w * dpr);
-  r.canvas.height = Math.round(r.h * dpr);
-  r.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  r.canvas.width = Math.round(width * dpr);
+  r.canvas.height = Math.round(height * dpr);
+  const b = box || { x: 32, y: 32, w: width - 64, h: height - 64 };
+  const scale = Math.min(b.w / r.w, b.h / r.h);
+  r.card = {
+    width, height, dpr, scale, chrome,
+    offX: b.x + (b.w - r.w * scale) / 2,
+    offY: b.y + (b.h - r.h * scale) / 2,
+  };
 }
 
 const OX = () => LABEL_LEFT + PAD;
@@ -766,6 +777,20 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
   const { monthLabels = null, ghost = null, ghosts = null, showCombo = false } = opts;
   const { ctx, theme } = r;
   const ghostList = ghosts || (ghost ? [ghost] : []);
+
+  // Social-card framing (offscreen clip only): paint the full letterbox, draw
+  // the injected chrome (brand + live stats), then shift into the centered,
+  // scaled board space so everything below renders as usual. r.card is never
+  // set for the on-screen renderer, so that path is unaffected.
+  if (r.card) {
+    const c = r.card;
+    ctx.setTransform(c.dpr, 0, 0, c.dpr, 0, 0);
+    ctx.fillStyle = theme.bg;
+    ctx.fillRect(0, 0, c.width, c.height);
+    if (c.chrome) c.chrome(ctx, game);
+    ctx.setTransform(c.scale * c.dpr, 0, 0, c.scale * c.dpr, c.offX * c.dpr, c.offY * c.dpr);
+  }
+
   ctx.save();
 
   // Renderer-local frame clock (ms) for blink/tongue timing. Clamped so a
