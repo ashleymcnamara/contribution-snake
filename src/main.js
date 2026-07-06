@@ -22,7 +22,7 @@ import {
   ghostFromRun, buildDailyField, advanceGhost, styleGhosts, updateRaceStrip,
 } from './race.js';
 import {
-  startSpectate, watchLocalBest, seekSpectate, exitSpectate,
+  startSpectate, watchLocalBest, seekSpectate, exitSpectate, toggleClip,
 } from './spectate.js';
 
 const $ = (id) => document.getElementById(id);
@@ -1140,6 +1140,7 @@ $('btn-spect-speed').addEventListener('click', () => {
   spectSpeed = spectSpeed >= 4 ? 1 : spectSpeed * 2;
   $('btn-spect-speed').textContent = `${spectSpeed}×`;
 });
+$('btn-spect-clip').addEventListener('click', () => toggleClip(ctx));
 $('spect-bar').addEventListener('click', (e) => {
   if (state !== 'spectating' && state !== 'spectate-done') return;
   const rect = e.currentTarget.getBoundingClientRect();
