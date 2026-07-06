@@ -772,12 +772,15 @@ async function renderLeaderboard(lbMode, dayOverride) {
     }
     // Today's daily runs share today's seed, so any of them can be raced live.
     const raceable = lbMode === 'daily' && !dayOverride && serverOk;
+    // The all-time board mixes modes, so each row shows where the run came from.
+    const showWhere = lbMode === 'all';
     const myName = localStorage.getItem('gh-snake-name');
     el.innerHTML = entries.map((e, i) => `
       <div class="lb-row${e.name === myName ? ' me' : ''}${e.replayId ? ' watchable' : ''}"
            ${e.replayId ? `data-replay="${escapeHtml(e.replayId)}" role="button" tabindex="0" title="Watch this run"` : ''}>
         <span class="lb-rank">${i + 1}</span>
         <span class="lb-name">${escapeHtml(e.name)}</span>
+        ${showWhere ? `<span class="lb-where">${escapeHtml(lbWhere(e))}</span>` : ''}
         <span class="lb-score">${e.score}</span>
         ${e.replayId && raceable ? `<button class="lb-race" type="button" data-race="${escapeHtml(e.replayId)}"
             title="Race this run" aria-label="Race ${escapeHtml(e.name)}'s run">${icons.race}</button>` : ''}
@@ -787,6 +790,8 @@ async function renderLeaderboard(lbMode, dayOverride) {
       el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Daily · ${actualDay}</div>`);
     } else if (lbMode === 'graph') {
       el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Graph · @${escapeHtml(user)}</div>`);
+    } else if (lbMode === 'all') {
+      el.insertAdjacentHTML('afterbegin', '<div class="lb-empty">Top scores across every mode</div>');
     }
     // Bring your own row into view — most useful right after submitting.
     el.querySelector('.lb-row.me')?.scrollIntoView({ block: 'nearest' });
@@ -795,8 +800,15 @@ async function renderLeaderboard(lbMode, dayOverride) {
   }
 }
 
+// Where an all-time entry was scored: whose graph, which daily, or classic.
+function lbWhere(e) {
+  if (e.mode === 'graph') return `@${e.day}`;
+  if (e.mode === 'daily') return e.day ? `Daily ${e.day.slice(5)}` : 'Daily';
+  return 'Classic';
+}
+
 function setActiveTab(activeId) {
-  for (const id of ['lb-tab-classic', 'lb-tab-daily', 'lb-tab-yesterday', 'lb-tab-graph']) {
+  for (const id of ['lb-tab-all', 'lb-tab-classic', 'lb-tab-daily', 'lb-tab-yesterday', 'lb-tab-graph']) {
     const btn = $(id);
     const on = id === activeId;
     btn.classList.toggle('active', on);
@@ -805,7 +817,7 @@ function setActiveTab(activeId) {
   }
 }
 
-function showLeaderboardScreen(initialTab = 'classic') {
+function showLeaderboardScreen(initialTab = 'all') {
   showOverlay(ctx, 'Leaderboard', 'Server-verified scores.', ['lb-tabs', 'leaderboard']);
   $('lb-tab-graph').hidden = !graphLbUser();
   setActiveTab(`lb-tab-${initialTab}`);
@@ -1102,6 +1114,7 @@ $('share-threads').addEventListener('click', () => shareToNetwork('threads'));
 $('share-native').addEventListener('click', shareNative);
 $('submit-row').addEventListener('submit', (e) => { e.preventDefault(); handleSubmit(); });
 $('btn-leaderboard').addEventListener('click', () => showLeaderboardScreen());
+$('lb-tab-all').addEventListener('click', () => { setActiveTab('lb-tab-all'); renderLeaderboard('all'); });
 $('lb-tab-classic').addEventListener('click', () => { setActiveTab('lb-tab-classic'); renderLeaderboard('classic'); });
 $('lb-tab-daily').addEventListener('click', () => { setActiveTab('lb-tab-daily'); renderLeaderboard('daily'); });
 $('lb-tab-yesterday').addEventListener('click', () => {

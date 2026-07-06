@@ -173,6 +173,37 @@ describe('graph mode sessions', () => {
   });
 });
 
+describe('all-time leaderboard', () => {
+  it('merges every board into one ranking, tagged with where each run came from', async () => {
+    const store = createMemoryStore();
+    // Scores span all three board types; graph runs outscore classic by design.
+    await store.insertScore({ id: 'aaaaaaaa', mode: 'classic', day: null, name: 'ash', score: 195, bestStreak: 5, snakeLength: 10, createdAt: 1000 });
+    await store.insertScore({ id: 'bbbbbbbb', mode: 'daily', day: '2026-07-06', name: 'boo', score: 400, bestStreak: 8, snakeLength: 14, createdAt: 2000 });
+    await store.insertScore({ id: 'cccccccc', mode: 'graph', day: 'cassidoo', name: 'cassidoo', score: 20479, bestStreak: 208, snakeLength: 300, createdAt: 3000 });
+    await store.insertScore({ id: 'dddddddd', mode: 'graph', day: 'octocat', name: 'octo', score: 7610, bestStreak: 86, snakeLength: 120, createdAt: 4000 });
+
+    const board = await logic.leaderboard(store, { mode: 'all' });
+    expect(board.status).toBe(200);
+    expect(board.body.mode).toBe('all');
+    expect(board.body.day).toBe(null);
+
+    const rows = board.body.entries;
+    expect(rows.map((e) => e.score)).toEqual([20479, 7610, 400, 195]);
+    // Each row is labeled with its originating board.
+    expect(rows[0]).toMatchObject({ name: 'cassidoo', mode: 'graph', day: 'cassidoo', replayId: 'cccccccc' });
+    expect(rows[2]).toMatchObject({ mode: 'daily', day: '2026-07-06' });
+    expect(rows[3]).toMatchObject({ mode: 'classic', day: null });
+  });
+
+  it('breaks score ties by earliest submission', async () => {
+    const store = createMemoryStore();
+    await store.insertScore({ id: 'later000', mode: 'classic', day: null, name: 'late', score: 100, bestStreak: 1, snakeLength: 5, createdAt: 5000 });
+    await store.insertScore({ id: 'early000', mode: 'graph', day: 'x', name: 'early', score: 100, bestStreak: 1, snakeLength: 5, createdAt: 1000 });
+    const rows = (await logic.leaderboard(store, { mode: 'all' })).body.entries;
+    expect(rows.map((e) => e.name)).toEqual(['early', 'late']);
+  });
+});
+
 describe('one-shot daily', () => {
   it('ranks only the first daily submission per client', async () => {
     const store = createMemoryStore();

@@ -855,6 +855,17 @@ canvas {
   font-variant-numeric: tabular-nums;
 }
 
+/* Where an all-time run was scored (whose graph / which mode). */
+.lb-where {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lb-row.watchable { cursor: pointer; }
 .lb-row.watchable:hover,
 .lb-row.watchable:focus-visible {

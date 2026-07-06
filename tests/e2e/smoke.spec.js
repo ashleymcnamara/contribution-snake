@@ -21,9 +21,13 @@ test('classic run: play, die, submit, verified leaderboard entry', async ({ page
   await row.click();
   await expect(page.locator('#board-label')).toContainText('Watching', { timeout: 5000 });
 
-  // Esc exits spectate back to the leaderboard screen.
+  // Esc exits spectate back to the leaderboard screen, which opens on the
+  // all-time board — the run shows there, tagged with the mode it came from.
   await page.keyboard.press('Escape');
   await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
+  await expect(page.locator('#lb-tab-all')).toHaveClass(/active/);
+  await expect(page.locator('#leaderboard')).toContainText('Top scores across every mode');
+  await expect(page.locator('.lb-row').filter({ hasText: 'e2e-bot' })).toContainText('Classic');
 });
 
 test('theme, palette, and pause controls', async ({ page }) => {
