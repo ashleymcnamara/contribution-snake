@@ -83,7 +83,29 @@ async function fetchViaScrape(username) {
 }
 
 export function fetchContributionDays(username, token) {
+  // Test-only escape hatch: the real fetchers hit GitHub (GraphQL or the public
+  // calendar page), which e2e can't depend on. When SNAKE_FAKE_CONTRIBS is set,
+  // return a deterministic synthetic year for any username so graph mode can be
+  // exercised offline. Never set this in production.
+  if (process.env.SNAKE_FAKE_CONTRIBS) return Promise.resolve(fakeContributionDays());
   return token ? fetchViaGraphQL(username, token) : fetchViaScrape(username);
+}
+
+// A fixed 52-week calendar with a mix of levels 0-4, matching the { date, level }
+// shape of the real fetchers. Deterministic (LCG + a fixed end date) so the same
+// grid is served for both session creation and replay validation. TEST ONLY.
+function fakeContributionDays() {
+  const days = [];
+  const end = new Date('2024-12-31T00:00:00Z');
+  let s = 1234567;
+  for (let i = 52 * 7 - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setUTCDate(end.getUTCDate() - i);
+    s = (s * 1103515245 + 12345) & 0x7fffffff; // LCG → deterministic 0-4 spread
+    days.push({ date: d.toISOString().slice(0, 10), level: s % 5 });
+  }
+  const total = days.reduce((n, day) => n + day.level, 0);
+  return { days, total, source: 'fake' };
 }
 
 // Normalize a flat day list into the game grid. Columns are weeks (oldest

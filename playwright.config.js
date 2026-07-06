@@ -1,9 +1,19 @@
 import { defineConfig } from '@playwright/test';
+import path from 'node:path';
+import os from 'node:os';
 
 // Match vite.config.js: overridable ports so e2e can run even when another
 // checkout of the project already holds the defaults.
 const WEB_PORT = Number(process.env.SNAKE_WEB_PORT) || 5173;
 const API_PORT = Number(process.env.SNAKE_API_PORT) || 3001;
+
+// Give the API server an isolated database so e2e never reads or writes the
+// developer's real dev DB (server/data.sqlite) and every run starts with a
+// clean leaderboard — otherwise accumulated tied scores make ranking-dependent
+// assertions flaky. A fresh file per run locally; CI's /tmp is already ephemeral.
+const E2E_DB = process.env.CI
+  ? '/tmp/snake-e2e.sqlite'
+  : path.join(os.tmpdir(), `snake-e2e-${Date.now()}.sqlite`);
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -28,7 +38,10 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         PORT: String(API_PORT),
-        SNAKE_DB: process.env.CI ? '/tmp/snake-e2e.sqlite' : '',
+        SNAKE_DB: E2E_DB,
+        // Serve a deterministic synthetic contribution calendar so graph-mode
+        // e2e never depends on GitHub (see fetchContributionDays).
+        SNAKE_FAKE_CONTRIBS: '1',
       },
     },
   ],
