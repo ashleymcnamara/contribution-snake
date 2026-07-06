@@ -5,9 +5,10 @@
 // button is ever shown.
 import { createGame, queueInput, step, boardSize } from './game/core.js';
 import {
-  createRenderer, sizeToBoard, draw, clearEffects,
+  createRenderer, sizeToCard, draw, clearEffects,
   spawnParticles, spawnFloatingText,
 } from './render/renderer.js';
+import { drawCardChrome, runStats, CARD_W, CARD_H, CARD_BOARD } from './share.js';
 
 // Preferred first; MediaRecorder.isTypeSupported picks the first the browser can
 // actually encode (vp9 → vp8 → whatever its default webm is).
@@ -37,12 +38,23 @@ const MAX_STEPS_PER_FRAME = 2;
 // { promise, cancel }: promise resolves { cancelled } once the file downloads
 // or recording is aborted; cancel() stops an in-flight recording without saving.
 export function recordClip({
-  params, inputs, months = null, theme, reduceMotion = false, speed = 2, onProgress = null,
+  params, inputs, months = null, theme, reduceMotion = false, speed = 2,
+  caption = {}, onProgress = null,
 }) {
   const canvas = document.createElement('canvas'); // never added to the layout
   const renderer = createRenderer(canvas);
   const { cols, rows } = boardSize(params.mode);
-  sizeToBoard(renderer, cols, rows); // full board, no follow-camera offscreen
+  // Render into a fixed 1200×630 social card (matching the static share PNG)
+  // with the board centered and live run stats up top, so a shared clip embeds
+  // as a proper landscape card instead of a bare board strip.
+  const chrome = (cx, game) => drawCardChrome(cx, {
+    theme,
+    title: caption.title || 'GitSnake',
+    subtitle: caption.subtitle || '',
+    stats: runStats(game),
+    footer: game.won ? 'Ate the whole year.' : 'Don’t break the build.',
+  });
+  sizeToCard(renderer, cols, rows, { width: CARD_W, height: CARD_H, box: CARD_BOARD, chrome });
   renderer.theme = theme;
   renderer.reduceMotion = reduceMotion;
   clearEffects(renderer);

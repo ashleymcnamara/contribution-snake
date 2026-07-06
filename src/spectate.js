@@ -181,6 +181,8 @@ export function toggleClip(ctx) {
   const btn = $('btn-spect-clip');
   btn.classList.add('recording');
   btn.textContent = 'Recording… 0%';
+  const modeLabels = { classic: 'Classic', daily: 'Daily challenge', graph: 'Graph' };
+  const label = modeLabels[ctx.spect.params.mode] || 'Run';
   clipRec = recordClip({
     params: ctx.spect.params,
     inputs: ctx.spect.inputs,
@@ -188,6 +190,7 @@ export function toggleClip(ctx) {
     theme: ctx.theme,
     reduceMotion: ctx.renderer.reduceMotion,
     speed: 2,
+    caption: { subtitle: `${label} · ${ctx.spect.name}` },
     onProgress: (p) => { btn.textContent = `Recording… ${Math.round(p * 100)}%`; },
   });
   clipRec.promise.catch(() => {}).finally(() => { clipRec = null; resetClipButton(); });
