@@ -8,12 +8,14 @@ import {
   resizeBoard, clearEffects, draw, spawnParticles, spawnFloatingText,
 } from './render/renderer.js';
 import { setTouchControls, hideOverlay, announce } from './ui.js';
+import { clipSupported, recordClip } from './clip.js';
 import * as api from './api.js';
 
 const $ = (id) => document.getElementById(id);
 
 let spectReturn = 'leaderboard'; // 'leaderboard' | 'start' | 'share'
 let lastWatched = null; // { name, score } when arriving via a share link
+let clipRec = null; // in-flight replay→WebM recording, or null (see toggleClip)
 
 export function beginSpectate(ctx, data, { label, returnTo = 'leaderboard' } = {}) {
   // params rebuild the exact same game — used again by click-to-seek.
@@ -31,6 +33,8 @@ export function beginSpectate(ctx, data, { label, returnTo = 'leaderboard' } = {
   ctx.spectSpeed = 1;
   $('btn-spect-speed').textContent = '1×';
   $('spect-fill').style.width = '0%';
+  resetClipButton();
+  $('btn-spect-clip').hidden = !clipSupported();
   ctx.mode = data.mode;
   ctx.session = null;
   ctx.ghosts = [];
@@ -162,6 +166,33 @@ function spectateTick(ctx, now) {
   requestAnimationFrame((t) => spectateTick(ctx, t));
 }
 
+// Toggle replay-clip recording: first click starts an offscreen recording that
+// re-simulates the watched run and downloads a WebM; while recording the export
+// button shows progress and a second click cancels. Exiting spectate aborts it.
+function resetClipButton() {
+  const btn = $('btn-spect-clip');
+  btn.classList.remove('recording');
+  btn.textContent = 'Export clip';
+}
+
+export function toggleClip(ctx) {
+  if (clipRec) { clipRec.cancel(); return; } // second click cancels
+  if (!ctx.spect) return;
+  const btn = $('btn-spect-clip');
+  btn.classList.add('recording');
+  btn.textContent = 'Recording… 0%';
+  clipRec = recordClip({
+    params: ctx.spect.params,
+    inputs: ctx.spect.inputs,
+    months: ctx.monthLabels,
+    theme: ctx.theme,
+    reduceMotion: ctx.renderer.reduceMotion,
+    speed: 2,
+    onProgress: (p) => { btn.textContent = `Recording… ${Math.round(p * 100)}%`; },
+  });
+  clipRec.promise.catch(() => {}).finally(() => { clipRec = null; resetClipButton(); });
+}
+
 // Land on the start menu after a shared run, keeping a one-tap "watch again"
 // for the playback the viewer just enjoyed.
 function showShareMenu(ctx) {
@@ -176,6 +207,7 @@ function showShareMenu(ctx) {
 }
 
 export function exitSpectate(ctx, { toMenu = false } = {}) {
+  clipRec?.cancel(); // abort any in-flight replay recording cleanly
   ctx.spect = null;
   ctx.state = 'idle';
   $('board-label').textContent = 'Snake graph';

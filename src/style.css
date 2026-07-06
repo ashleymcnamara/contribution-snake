@@ -453,6 +453,14 @@ canvas {
 }
 .btn-secondary:hover { background: var(--border); }
 
+/* While a replay clip is being recorded the export button doubles as a progress
+   readout ("Recording… NN%"); tint it with the board accent so it reads as
+   active, and click again to cancel. */
+.btn-secondary.recording {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
 .linklike {
   background: none;
   border: none;

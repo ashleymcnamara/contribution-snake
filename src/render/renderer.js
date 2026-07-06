@@ -157,6 +157,23 @@ export function fitBoard(r) {
   }
 }
 
+// Size a renderer to the full logical board without measuring the document.
+// For offscreen recording: there is no layout to measure and the follow-camera
+// (which fitBoard can engage) must never kick in, so the whole board stays in
+// frame. dpr is fixed rather than read from the device so clip resolution is
+// stable regardless of the screen it was recorded on.
+export function sizeToBoard(r, cols, rows, dpr = 2) {
+  r.cols = cols;
+  r.rows = rows;
+  r.w = LABEL_LEFT + PAD + cols * STEP_PX + GAP + PAD;
+  r.h = LABEL_TOP + PAD + rows * STEP_PX + GAP + PAD;
+  r.gridTheme = null; // force the grid cache to rebuild at the new size / dpr
+  r.camera = null; // whole board always in frame — no follow-camera offscreen
+  r.canvas.width = Math.round(r.w * dpr);
+  r.canvas.height = Math.round(r.h * dpr);
+  r.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
 const OX = () => LABEL_LEFT + PAD;
 const OY = () => LABEL_TOP + PAD;
 
