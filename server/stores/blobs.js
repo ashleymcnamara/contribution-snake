@@ -69,6 +69,22 @@ export function createBlobStore() {
         bestStreak: s.bestStreak, createdAt: s.createdAt,
       }));
     },
+    // Global "Hall of Fame": the highest scores across every board. The key's
+    // score/timestamp segment (everything after `mode/day/`) is fixed-width, so
+    // it sorts identically across boards — merge all keys, take the best N.
+    async getGlobalLeaderboard(limit) {
+      const { blobs } = await scores.list();
+      const seg = (k) => k.split('/').slice(2).join('/');
+      const keys = blobs.map((b) => b.key)
+        .sort((a, b) => (seg(a) < seg(b) ? -1 : seg(a) > seg(b) ? 1 : 0))
+        .slice(0, limit);
+      const rows = await Promise.all(keys.map((k) => scores.get(k, { type: 'json' })));
+      return rows.filter(Boolean).map((s) => ({
+        replayId: s.id, name: s.name, score: s.score,
+        bestStreak: s.bestStreak, createdAt: s.createdAt,
+        mode: s.mode, day: s.day ?? null,
+      }));
+    },
     async putReplay(id, data) {
       await replays.setJSON(id, data);
     },

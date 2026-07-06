@@ -37,6 +37,8 @@ Without configuration the server reads contribution calendars from GitHub's publ
 | **Daily challenge** | Same seeded board for everyone, resets at UTC midnight — and it's a **crowd race**: the whole top-10's replays run alongside you as a translucent field, a live position pill tracks where you sit ("P4 · 11 racers"), the nearest run still ahead of you is spotlit and named, and the game-over screen says where you finished. **One-shot**: only your first submitted score ranks; later runs are practice. | Per-day |
 | **Your graph** | A real user's last 12 months, 52×7. Brighter days are worth more, and the pace ramps up as you clear the board. Eat the whole year to win. | Per-username — everyone playing the same graph competes |
 
+The leaderboard opens on an **All-time** tab that merges every board into one ranking of the highest scores anywhere — each row labeled with the mode or graph it came from. Because a graph has far more food than a classic board, scores aren't comparable across modes, so this view is dominated by graph runs by design; the per-mode tabs remain for fair, like-for-like standings.
+
 In classic and daily, every fifth commit spawns a **golden commit** — a timed bonus cell worth 50 base points (the streak multiplier applies) that blinks out after ~4.5 seconds of play at the speed it spawned at (time-normalized so top-level goldens aren't unwinnable). Detour or not: that's the decision. And the head may slide into the cell the tail is vacating (**tail forgiveness**), so tight coils no longer end in deaths that feel stolen.
 
 Three unranked variants — **wrap walls**, **chill speed**, and **rotten commits** (a timed hazard cell every third eat that zeroes your streak and costs 25 points) — can be toggled on the start screen for classic and graph modes. Variant runs never create a server session, so they can't touch the leaderboard by construction. A fourth toggle, **race your best**, replays your best local run as a translucent ghost: daily and graph boards match by construction, while classic reuses that run's exact board and plays unranked. On today's daily leaderboard, every entry also has a **race** button — pick any rival, not just #1 — and the game-over screen renders a verdict on who won.
@@ -76,7 +78,7 @@ Gameplay changes that alter determinism bump a **rules version** (`CURRENT_RULES
 | `GET /api/contributions/:username` | Normalized 52×7 contribution grid (cached 10 min) |
 | `POST /api/session` | Issue a seeded game session (`classic` \| `daily` \| `graph` — graph takes a `username`, daily a `clientId` for the one-shot rule) |
 | `POST /api/scores` | Submit `{sessionId, name, inputs}` for replay verification |
-| `GET /api/leaderboard?mode=&day=&user=` | Top 20 verified scores (`user` selects a graph board) |
+| `GET /api/leaderboard?mode=&day=&user=` | Top 20 verified scores (`mode=all` merges every board; `user` selects a graph board) |
 | `GET /api/replay/:id` | Input log of a verified run, for ghosts and spectating |
 | `GET /api/og/:id.png` | Server-rendered link-preview image of a run's final board |
 | `GET /r/:id` | Share page: OG meta for scrapers, replay redirect for humans |

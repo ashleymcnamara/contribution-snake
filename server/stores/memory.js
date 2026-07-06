@@ -49,6 +49,19 @@ export function createMemoryStore() {
           bestStreak: s.bestStreak, createdAt: s.createdAt,
         }));
     },
+    // Global "Hall of Fame": the highest scores across every mode and board.
+    // Entries carry their mode/day so the UI can label where each run came from.
+    async getGlobalLeaderboard(limit) {
+      return scores
+        .slice()
+        .sort((a, b) => b.score - a.score || a.createdAt - b.createdAt)
+        .slice(0, limit)
+        .map((s) => ({
+          replayId: s.id, name: s.name, score: s.score,
+          bestStreak: s.bestStreak, createdAt: s.createdAt,
+          mode: s.mode, day: s.day ?? null,
+        }));
+    },
     async putReplay(id, data) {
       replays.set(id, structuredClone(data));
     },
