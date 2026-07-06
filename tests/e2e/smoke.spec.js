@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 
 test('classic run: play, die, submit, verified leaderboard entry', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
+  await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 
   await page.click('#btn-classic');
   // Unattended, the snake hits the wall in ~2s; death animation follows.
@@ -97,7 +97,7 @@ test('stats panel appears after a finished run', async ({ page }) => {
   await page.click('#btn-stats');
   await expect(page.locator('#stats-panel')).toContainText('games played');
   await page.click('#stats-back');
-  await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
+  await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 });
 
 test('finishing a first game unlocks an achievement and opens the panel', async ({ page }) => {
@@ -116,5 +116,5 @@ test('finishing a first game unlocks an achievement and opens the panel', async 
   // Locked threshold achievements show progress from lifetime stats (1 game so far).
   await expect(page.locator('#achievements-panel')).toContainText('1/10');
   await page.click('#achievements-back');
-  await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
+  await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 });
