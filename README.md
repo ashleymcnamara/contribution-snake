@@ -33,11 +33,11 @@ Without configuration the server reads contribution calendars from GitHub's publ
 
 | Mode | Board | Leaderboard |
 |------|-------|-------------|
-| **Classic** | Random food, endless, speeds up per level | Global, all-time |
+| **Classic** | Random food, endless, speeds up per level | On the all-time board |
 | **Daily challenge** | Same seeded board for everyone, resets at UTC midnight — and it's a **crowd race**: the whole top-10's replays run alongside you as a translucent field, a live position pill tracks where you sit ("P4 · 11 racers"), the nearest run still ahead of you is spotlit and named, and the game-over screen says where you finished. **One-shot**: only your first submitted score ranks; later runs are practice. | Per-day |
 | **Your graph** | A real user's last 12 months, 52×7. Brighter days are worth more, and the pace ramps up as you clear the board. Eat the whole year to win. | Per-username — everyone playing the same graph competes |
 
-The leaderboard opens on an **All-time** tab that merges every board into one ranking of the highest scores anywhere — each row labeled with the mode or graph it came from. Because a graph has far more food than a classic board, scores aren't comparable across modes, so this view is dominated by graph runs by design; the per-mode tabs remain for fair, like-for-like standings.
+The leaderboard opens on an **All-time** tab that merges every board into one ranking of the highest scores anywhere — each row labeled with the mode or graph it came from. Because a graph has far more food than a classic board, scores aren't comparable across modes, so this view is dominated by graph runs by design. Two focused tabs sit alongside it: **Daily** (today's crowd race) and **Graph** (a specific user's board, shown once you've loaded one); classic runs are only ranked in the all-time mix.
 
 In classic and daily, every fifth commit spawns a **golden commit** — a timed bonus cell worth 50 base points (the streak multiplier applies) that blinks out after ~4.5 seconds of play at the speed it spawned at (time-normalized so top-level goldens aren't unwinnable). Detour or not: that's the decision. And the head may slide into the cell the tail is vacating (**tail forgiveness**), so tight coils no longer end in deaths that feel stolen.
 
