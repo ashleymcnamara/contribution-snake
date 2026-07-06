@@ -756,14 +756,12 @@ function graphLbUser() {
   return graphData?.username || localStorage.getItem('gh-snake-user') || null;
 }
 
-async function renderLeaderboard(lbMode, dayOverride) {
+async function renderLeaderboard(lbMode) {
   const el = $('leaderboard');
   el.hidden = false;
   el.innerHTML = '<div class="lb-empty">Loading…</div>';
   try {
-    const day = lbMode === 'daily'
-      ? (dayOverride || new Date().toISOString().slice(0, 10))
-      : undefined;
+    const day = lbMode === 'daily' ? new Date().toISOString().slice(0, 10) : undefined;
     const user = lbMode === 'graph' ? graphLbUser() : undefined;
     const { entries, day: actualDay } = await api.getLeaderboard(lbMode, day, user);
     if (!entries.length) {
@@ -771,7 +769,7 @@ async function renderLeaderboard(lbMode, dayOverride) {
       return;
     }
     // Today's daily runs share today's seed, so any of them can be raced live.
-    const raceable = lbMode === 'daily' && !dayOverride && serverOk;
+    const raceable = lbMode === 'daily' && serverOk;
     // The all-time board mixes modes, so each row shows where the run came from.
     const showWhere = lbMode === 'all';
     const myName = localStorage.getItem('gh-snake-name');
@@ -808,7 +806,7 @@ function lbWhere(e) {
 }
 
 function setActiveTab(activeId) {
-  for (const id of ['lb-tab-all', 'lb-tab-classic', 'lb-tab-daily', 'lb-tab-yesterday', 'lb-tab-graph']) {
+  for (const id of ['lb-tab-all', 'lb-tab-daily', 'lb-tab-graph']) {
     const btn = $(id);
     const on = id === activeId;
     btn.classList.toggle('active', on);
@@ -913,7 +911,7 @@ async function handleSubmit() {
     }
     $('submit-row').hidden = true;
     $('overlay-sub').textContent = `Verified! You're #${result.rank} ${
-      mode === 'daily' ? 'today' : mode === 'graph' ? `on @${graphData.username}'s graph` : 'all-time'}.`;
+      mode === 'daily' ? 'today' : mode === 'graph' ? `on @${graphData.username}'s graph` : 'in Classic'}.`;
     $('leaderboard').hidden = false;
     renderLeaderboard(mode === 'daily' ? 'daily' : mode === 'graph' ? 'graph' : 'classic');
   } catch (err) {
@@ -1115,13 +1113,7 @@ $('share-native').addEventListener('click', shareNative);
 $('submit-row').addEventListener('submit', (e) => { e.preventDefault(); handleSubmit(); });
 $('btn-leaderboard').addEventListener('click', () => showLeaderboardScreen());
 $('lb-tab-all').addEventListener('click', () => { setActiveTab('lb-tab-all'); renderLeaderboard('all'); });
-$('lb-tab-classic').addEventListener('click', () => { setActiveTab('lb-tab-classic'); renderLeaderboard('classic'); });
 $('lb-tab-daily').addEventListener('click', () => { setActiveTab('lb-tab-daily'); renderLeaderboard('daily'); });
-$('lb-tab-yesterday').addEventListener('click', () => {
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  setActiveTab('lb-tab-yesterday');
-  renderLeaderboard('daily', yesterday);
-});
 $('lb-tab-graph').addEventListener('click', () => { setActiveTab('lb-tab-graph'); renderLeaderboard('graph'); });
 $('lb-back').addEventListener('click', showStartScreen);
 $('btn-watch-best').addEventListener('click', () => watchLocalBest(ctx));

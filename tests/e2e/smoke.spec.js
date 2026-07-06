@@ -28,6 +28,9 @@ test('classic run: play, die, submit, verified leaderboard entry', async ({ page
   await expect(page.locator('#lb-tab-all')).toHaveClass(/active/);
   await expect(page.locator('#leaderboard')).toContainText('Top scores across every mode');
   await expect(page.locator('.lb-row').filter({ hasText: 'e2e-bot' })).toContainText('Classic');
+  // Simplified to three tabs: the standalone Classic and Yesterday boards are gone.
+  await expect(page.locator('#lb-tab-classic')).toHaveCount(0);
+  await expect(page.locator('#lb-tab-yesterday')).toHaveCount(0);
 });
 
 test('theme, palette, and pause controls', async ({ page }) => {
