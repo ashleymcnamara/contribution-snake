@@ -30,6 +30,7 @@ export function createBlobStore() {
   const replays = getStore({ name: 'snake-replays' });
   const contrib = getStore({ name: 'snake-contrib-cache' });
   const meta = getStore({ name: 'snake-meta', consistency: 'strong' });
+  const dailyClaims = getStore({ name: 'snake-daily-claims', consistency: 'strong' });
 
   return {
     async getSession(id) {
@@ -42,6 +43,12 @@ export function createBlobStore() {
     // concurrent write comes back with modified: false.
     async claimSession(id) {
       const res = await sessions.set(`${id}/used`, '1', { onlyIfNew: true });
+      return res?.modified !== false;
+    },
+    // One ranked daily score per client per day — onlyIfNew makes the first
+    // claim win, same trick as claimSession.
+    async claimDailyRank(day, clientId) {
+      const res = await dailyClaims.set(`${day}/${clientId}`, '1', { onlyIfNew: true });
       return res?.modified !== false;
     },
     async insertScore(s) {
@@ -93,7 +100,19 @@ export async function cleanupBlobStore() {
   const sessions = getStore({ name: 'snake-sessions' });
   const scores = getStore({ name: 'snake-scores' });
   const replays = getStore({ name: 'snake-replays' });
-  const summary = { sessionsDeleted: 0, scoresTrimmed: 0, replaysDeleted: 0 };
+  const dailyClaims = getStore({ name: 'snake-daily-claims' });
+  const summary = { sessionsDeleted: 0, scoresTrimmed: 0, replaysDeleted: 0, claimsDeleted: 0 };
+
+  // 0. Daily one-shot claims only matter for the current day; keep two days
+  //    for UTC-boundary slack and drop the rest (keys are `YYYY-MM-DD/<id>`).
+  const cutoffDay = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const { blobs: claimBlobs } = await dailyClaims.list();
+  for (const { key } of claimBlobs) {
+    if (key.slice(0, 10) < cutoffDay) {
+      await dailyClaims.delete(key);
+      summary.claimsDeleted++;
+    }
+  }
 
   // 1. Sessions (and their claim markers) older than the TTL.
   const { blobs: sessionBlobs } = await sessions.list();

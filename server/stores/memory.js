@@ -6,6 +6,7 @@ export function createMemoryStore() {
   const scores = [];
   const replays = new Map();
   const contribCache = new Map();
+  const dailyClaims = new Set();
   let dailySecret = null;
 
   const matches = (s, mode, day) => s.mode === mode && (s.day ?? null) === (day ?? null);
@@ -23,6 +24,13 @@ export function createMemoryStore() {
       const s = sessions.get(id);
       if (!s || s.used) return false;
       s.used = true;
+      return true;
+    },
+    // One ranked daily score per client per day: first claim wins.
+    async claimDailyRank(day, clientId) {
+      const key = `${day}/${clientId}`;
+      if (dailyClaims.has(key)) return false;
+      dailyClaims.add(key);
       return true;
     },
     async insertScore(score) {

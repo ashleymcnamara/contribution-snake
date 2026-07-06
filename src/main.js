@@ -1,12 +1,12 @@
 import './style.css';
-import { createGame, queueInput, step, boardSize } from './game/core.js';
+import { createGame, queueInput, step, boardSize, ROTTEN_PENALTY } from './game/core.js';
 import { botSteer } from './game/bot.js';
 import { randomSeed } from './game/rng.js';
 import {
   createRenderer, resizeBoard, fitBoard, draw, spawnParticles, spawnFloatingText,
   startDeathEffect, clearEffects, effectsActive,
 } from './render/renderer.js';
-import { loadThemeName, loadPalette, applyTheme } from './theme.js';
+import { loadThemeSetting, loadPalette, applyTheme } from './theme.js';
 import * as audio from './audio.js';
 import * as api from './api.js';
 import {
@@ -20,9 +20,9 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('game');
 const renderer = createRenderer(canvas);
 
-let themeName = loadThemeName();
+let themeSetting = loadThemeSetting(); // 'auto' | 'dark' | 'light'
 let palette = loadPalette();
-let theme = applyTheme(themeName, palette);
+let theme = applyTheme(themeSetting, palette);
 renderer.theme = theme;
 
 // --- app state ---
@@ -48,11 +48,18 @@ let lastRank = null;
 let lastReplayId = null;
 let lastWatched = null; // { name, score } when arriving via a share link
 let sharedReplay = null; // { id, name, score } for the "watch again" button
-// Translucent replay opponent racing on the daily board:
-// { game, inputs, ptr, acc, prevSnake, alpha, name }
-let ghost = null;
+// Translucent replay opponents racing on the same board. The daily runs a
+// crowd: the whole top-10's replays at once (plus your best / a chosen
+// rival, which gets the `primary` spotlight). Classic/graph race-your-best
+// is a field of one. Each entry: { game, inputs, ptr, acc, prevSnake, alpha,
+// name, finalScore, primary?, renderAlpha, showName } — the last two are
+// restyled every frame (nearest rival bright + named, the rest a whisper).
+let ghosts = [];
+const FIELD_SIZE = 10;
 // Spectate mode playback: { inputs, ptr, name, score }
 let spect = null;
+let spectSpeed = 1; // 1 | 2 | 4 playback multiplier
+let lastDeathCause = null; // 'wall' | 'self' from the fatal step
 
 const MODE_LABELS = { classic: 'Classic', daily: 'Daily challenge', graph: 'Your graph' };
 
@@ -90,26 +97,56 @@ function getVariants() {
   return {
     wrap: localStorage.getItem('gh-snake-var-wrap') === '1',
     chill: localStorage.getItem('gh-snake-var-chill') === '1',
+    rotten: localStorage.getItem('gh-snake-var-rotten') === '1',
   };
 }
 
 function variantsActiveFor(m) {
   const v = getVariants();
-  return (v.wrap || v.chill) && m !== 'daily';
+  return (v.wrap || v.chill || v.rotten) && m !== 'daily';
+}
+
+function racePref() {
+  return localStorage.getItem('gh-snake-var-race') === '1';
 }
 
 function updateVariantNote() {
   const v = getVariants();
+  const race = racePref();
   $('var-wrap').checked = v.wrap;
   $('var-chill').checked = v.chill;
-  $('variant-note').hidden = !(v.wrap || v.chill);
+  $('var-rotten').checked = v.rotten;
+  $('var-race').checked = race;
+  const notes = [];
+  if (v.wrap || v.chill || v.rotten) notes.push('Variant runs are unranked (classic and graph only).');
+  if (race) notes.push('Race a translucent ghost of your best run — classic reuses that board (unranked).');
+  $('variant-note').textContent = notes.join(' ');
+  $('variant-note').hidden = notes.length === 0;
+  // The disclosure's summary names whatever is on, so collapsing the panel
+  // never hides active gameplay modifiers.
+  const active = [
+    v.wrap && 'wrap', v.chill && 'chill', v.rotten && 'rotten', race && 'race best',
+  ].filter(Boolean);
+  $('variant-summary').innerHTML = active.length
+    ? `Variants · <span class="variant-summary-active">${active.join(' + ')}</span>`
+    : 'Variants';
 }
 
 function updateUI() {
   $('score').textContent = game ? game.score : 0;
   const streak = game ? game.streak : 0;
   $('streak').textContent = game && game.multiplier > 1 ? `${streak} ×${game.multiplier}` : String(streak);
-  $('level').textContent = game ? game.level : 1;
+  // Graph mode's real goal is clearing the year, so show progress toward it
+  // where the level (which graph mode derives from progress anyway) would be.
+  if (game && game.mode === 'graph' && game.totalCells) {
+    $('level-label').textContent = 'Days:';
+    $('level').textContent = `${game.totalCells - game.cells.size}/${game.totalCells}`;
+    $('level').style.minWidth = '7ch'; // reserve width so the bar doesn't pulse
+  } else {
+    $('level-label').textContent = 'Level:';
+    $('level').textContent = game ? game.level : 1;
+    $('level').style.minWidth = '';
+  }
   $('best').textContent = getHighScore();
 }
 
@@ -144,6 +181,15 @@ function toast(icon, title, sub) {
   el.addEventListener('click', remove);
 }
 
+// One-time hint for touch players: swiping isn't discoverable, and the
+// controls-hint line is desktop-only. Shown as a toast on the first run.
+function maybeTouchHint() {
+  if (localStorage.getItem('gh-snake-touch-hint')) return;
+  if (!window.matchMedia('(pointer: coarse)').matches) return;
+  localStorage.setItem('gh-snake-touch-hint', '1');
+  toast(icons.right, 'Steer with a swipe', 'Drag anywhere on the board — or use the pad below.');
+}
+
 function updatePauseButton() {
   const btn = $('pause-btn');
   const active = state === 'playing' || state === 'paused';
@@ -154,12 +200,13 @@ function updatePauseButton() {
 
 // --- overlay management ---
 const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-watch-shared',
-  'btn-watch-best', 'btn-stats', 'btn-achievements', 'stats-panel', 'stats-back',
+  'btn-watch-best', 'btn-stats', 'btn-achievements', 'btn-install', 'stats-panel', 'stats-back',
   'achievements-panel', 'achievements-back', 'btn-resume', 'submit-row',
   'over-actions', 'share-row', 'lb-tabs', 'leaderboard', 'over-stats'];
 
 function showOverlay(title, sub, sections = []) {
   clearCountdown(); // cancel any pending resume countdown if we navigate away
+  updateRaceStrip(null); // the live position pill only makes sense mid-run
   $('overlay-title').textContent = title;
   $('overlay-sub').textContent = sub;
   for (const id of OVERLAY_SECTIONS) $(id).hidden = !sections.includes(id);
@@ -259,11 +306,14 @@ function showStartScreen() {
     best > 0 ? `Eat commits. Grow your streak. Best: ${best}.` : 'Eat commits. Grow your streak.',
     ['mode-buttons', ...(serverOk ? ['btn-leaderboard'] : []),
       ...(localBest ? ['btn-watch-best'] : []),
-      ...(stats.games > 0 ? ['btn-stats', 'btn-achievements'] : [])]
+      ...(stats.games > 0 ? ['btn-stats', 'btn-achievements'] : []),
+      ...(installPrompt ? ['btn-install'] : [])]
   );
   if (localBest) {
     $('btn-watch-best').textContent = `Watch your best run (${localBest.score} pts)`;
   }
+  // No saved run yet -> nothing to race; keep the toggle out of the way.
+  $('var-race-label').hidden = !localBest;
   updateVariantNote();
   startDemo();
   $('mode-note').hidden = serverOk;
@@ -322,7 +372,42 @@ setInterval(() => {
 }, 1000);
 
 // --- game lifecycle ---
-async function startRun(selectedMode) {
+
+// Build a ghost from any stored run (server replay or local best). The ghost
+// simulates its own game under the seed/rules it was recorded with, so old
+// runs replay faithfully even after gameplay-rule changes. finalScore is the
+// run's known end score — the game-over screen uses it for the race verdict.
+function ghostFromRun(run, name) {
+  return {
+    game: createGame({
+      mode: run.mode,
+      seed: run.seed,
+      graph: run.graph || null,
+      wrap: run.wrap || false,
+      speedFactor: run.speedFactor || 1,
+      rotten: run.rotten || false,
+      rules: run.rules || 1,
+    }),
+    inputs: run.inputs,
+    ptr: 0,
+    acc: 0,
+    prevSnake: null,
+    alpha: 1,
+    name,
+    finalScore: Number.isFinite(run.score) ? run.score : null,
+  };
+}
+
+function bestRunFor(m) {
+  // An empty input log is still a valid (if turn-free) run — same acceptance
+  // as the "watch your best" button, so racing never silently no-ops.
+  const run = JSON.parse(localStorage.getItem(`gh-snake-bestrun-${m}`) || 'null');
+  return Array.isArray(run?.inputs) ? run : null;
+}
+
+// raceReplayId: race a specific verified run (from a daily leaderboard row)
+// as the ghost instead of the default opponent.
+async function startRun(selectedMode, { raceReplayId = null } = {}) {
   if (state === 'loading') return;
   mode = selectedMode;
   session = null;
@@ -330,21 +415,33 @@ async function startRun(selectedMode) {
   lastRank = null;
   lastReplayId = null;
   sharedReplay = null;
-  ghost = null;
+  ghosts = [];
   spect = null;
+  lastDeathCause = null;
   monthLabels = mode === 'graph' ? graphData.months : null;
 
-  // Variant runs (wrap walls / chill speed) are unranked: no session is
-  // created, so there is nothing to submit — fairness enforced by absence.
-  const variants = variantsActiveFor(mode) ? getVariants() : { wrap: false, chill: false };
-  const useVariants = variants.wrap || variants.chill;
+  // Variant runs (wrap walls / chill speed / rotten commits) are unranked: no
+  // session is created, so there is nothing to submit — fairness by absence.
+  const variants = variantsActiveFor(mode)
+    ? getVariants()
+    : { wrap: false, chill: false, rotten: false };
+  const useVariants = variants.wrap || variants.chill || variants.rotten;
+
+  // Race-your-best: a ghost of your best local run for this mode. Classic
+  // has to replay that run's exact board (its seed and rules), so it skips
+  // the session and plays unranked; daily and graph boards already match.
+  const raceRun = racePref() ? bestRunFor(mode) : null;
+  const raceClassic = mode === 'classic' && !!raceRun;
 
   let seed = randomSeed();
-  if (serverOk && !useVariants && (mode === 'classic' || mode === 'daily')) {
+  let rules; // undefined -> createGame's current default
+  if (serverOk && !useVariants && !raceClassic) {
     state = 'loading';
     try {
-      session = await api.createSession(mode);
+      session = await api.createSession(mode, mode === 'graph' ? graphData.username : undefined);
       seed = session.seed;
+      // Play under the rules the server will replay with (old servers omit it).
+      rules = session.rules || 1;
     } catch (err) {
       session = null;
       if (mode === 'daily') {
@@ -354,27 +451,52 @@ async function startRun(selectedMode) {
         return;
       }
     }
-    // Daily: race today's #1 as a translucent ghost (same seed, same board).
     if (mode === 'daily' && session) {
+      // Crowd race: everyone on today's board runs alongside you. The whole
+      // top-FIELD_SIZE replays the same seed; an explicitly-picked rival
+      // (leaderboard race button) or your own best gets the primary
+      // spotlight. All of it is a bonus — failures just thin the field.
+      const dailyGhost = (rd) => ghostFromRun({
+        mode: 'daily', seed: session.seed, inputs: rd.inputs,
+        rules: rd.rules, score: rd.score,
+      }, rd.name);
       try {
         const { entries } = await api.getLeaderboard('daily', session.day);
-        const top = entries.find((e) => e.replayId);
-        if (top) {
-          const replayData = await api.getReplay(top.replayId);
-          ghost = {
-            game: createGame({ mode: 'daily', seed: session.seed }),
-            inputs: replayData.inputs,
-            ptr: 0,
-            acc: 0,
-            prevSnake: null,
-            alpha: 1,
-            name: replayData.name,
-          };
+        const field = entries.filter((e) => e.replayId).slice(0, FIELD_SIZE);
+        const replays = await Promise.allSettled(field.map((e) => api.getReplay(e.replayId)));
+        replays.forEach((res, i) => {
+          if (res.status !== 'fulfilled') return;
+          const g = dailyGhost(res.value);
+          if (field[i].replayId === raceReplayId) g.primary = true;
+          ghosts.push(g);
+        });
+        // A picked rival outside the top field still joins (and leads).
+        if (raceReplayId && !ghosts.some((g) => g.primary)) {
+          const g = dailyGhost(await api.getReplay(raceReplayId));
+          g.primary = true;
+          ghosts.push(g);
         }
-      } catch {
-        ghost = null; // racing is a bonus, never a blocker
+      } catch { /* racing is a bonus, never a blocker */ }
+      if (raceRun && raceRun.day === session.day && raceRun.seed === session.seed
+          && (raceRun.rules || 1) === (session.rules || 1)) {
+        const g = ghostFromRun(raceRun, 'your best');
+        if (!ghosts.some((x) => x.primary)) g.primary = true;
+        ghosts.push(g);
       }
     }
+  }
+
+  if (raceClassic) {
+    // Replica of your best run's world: same seed, same rules, same variants.
+    seed = raceRun.seed;
+    rules = raceRun.rules || 1;
+    variants.wrap = raceRun.wrap || false;
+    variants.chill = (raceRun.speedFactor || 1) !== 1;
+    variants.rotten = raceRun.rotten || false;
+    ghosts = [Object.assign(ghostFromRun(raceRun, 'your best'), { primary: true })];
+  } else if (mode === 'graph' && raceRun && raceRun.username === graphData.username) {
+    // Same graph, so the ghost lines up cell for cell; ranked play unaffected.
+    ghosts = [Object.assign(ghostFromRun(raceRun, 'your best'), { primary: true })];
   }
 
   game = createGame({
@@ -383,6 +505,8 @@ async function startRun(selectedMode) {
     graph: mode === 'graph' ? graphData.grid : null,
     wrap: variants.wrap,
     speedFactor: variants.chill ? 1.5 : 1,
+    rotten: variants.rotten,
+    ...(rules ? { rules } : {}),
   });
   const { cols, rows } = boardSize(mode);
   if (renderer.cols !== cols || renderer.rows !== rows) resizeBoard(renderer, cols, rows);
@@ -390,9 +514,15 @@ async function startRun(selectedMode) {
   prevSnake = null;
   accumulator = 0;
 
-  const variantTag = useVariants
-    ? ` · ${[variants.wrap && 'wrap', variants.chill && 'chill'].filter(Boolean).join(' + ')} (unranked)`
-    : '';
+  const primaryGhost = ghosts.find((g) => g.primary) || null;
+  const variantTag = raceClassic
+    ? ' · racing your best (unranked)'
+    : useVariants
+      ? ` · ${[variants.wrap && 'wrap', variants.chill && 'chill', variants.rotten && 'rotten']
+        .filter(Boolean).join(' + ')} (unranked)`
+      : primaryGhost ? ` · racing ${primaryGhost.name}`
+        : ghosts.length > 1 ? ` · racing the field (${ghosts.length})`
+          : ghosts.length === 1 ? ` · racing ${ghosts[0].name}` : '';
   $('board-label').textContent = (
     mode === 'graph' ? `@${graphData.username} · last 12 months`
       : mode === 'daily' ? `Daily challenge · ${session.day}`
@@ -404,9 +534,10 @@ async function startRun(selectedMode) {
   updatePauseButton();
   updateUI();
   announce(`${MODE_LABELS[mode]} started.`);
+  maybeTouchHint();
   // Open every run on the same 3-2-1 as resume, so you're never dropped
   // straight onto a moving snake. The board is drawn frozen underneath.
-  draw(renderer, game, null, 1, { monthLabels, ghost });
+  draw(renderer, game, null, 1, { monthLabels, ghosts });
   runCountdown(() => {
     if (state !== 'resuming') return; // aborted (navigated away / restarted)
     state = 'playing';
@@ -419,16 +550,32 @@ async function startRun(selectedMode) {
 
 function handleStepEvents(ev) {
   if (ev.ate) {
-    spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
-    spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
-    audio.playEat(game.streak);
-    haptic(6);
+    if (ev.golden) {
+      spawnParticles(renderer, ev.head.x, ev.head.y, theme.gold, 14);
+      spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`, true);
+      audio.playGolden();
+      haptic([0, 12, 30, 12]);
+    } else {
+      spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
+      spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
+      audio.playEat(game.streak);
+      haptic(6);
+    }
     if (ev.levelUp) {
       spawnFloatingText(renderer, ev.head.x, ev.head.y, `LEVEL ${game.level}`, true);
       audio.playLevelUp();
       haptic([0, 18, 40, 18]);
       announce(`Level ${game.level}`);
     }
+    if (ev.goldenSpawned) announce('Golden commit on the board — grab it before it fades.');
+    updateUI();
+  }
+  if (ev.rotten) {
+    spawnParticles(renderer, ev.head.x, ev.head.y, theme.death, 10);
+    spawnFloatingText(renderer, ev.head.x, ev.head.y, `-${ROTTEN_PENALTY}`);
+    audio.playRotten();
+    haptic([0, 30, 30, 30]);
+    announce('Rotten commit — streak lost.');
     updateUI();
   }
   if (ev.won) {
@@ -436,6 +583,7 @@ function handleStepEvents(ev) {
     haptic([0, 40, 60, 40, 60, 80]);
     finishRun(true);
   } else if (ev.died) {
+    lastDeathCause = ev.cause || null;
     audio.playDeath();
     haptic([0, 90, 40, 90]);
     startDeathEffect(renderer, game.snake);
@@ -444,7 +592,7 @@ function handleStepEvents(ev) {
   }
 }
 
-function advanceGhost(dt) {
+function advanceGhost(ghost, dt) {
   const g = ghost.game;
   if (!g.alive || g.won) return;
   ghost.acc += dt;
@@ -460,13 +608,62 @@ function advanceGhost(dt) {
   ghost.alpha = Math.min(1, ghost.acc / g.speed);
 }
 
+// Restyle the field each frame: an explicit rival (or, failing that, the
+// nearest run still ahead of you) gets the spotlight — brighter and named —
+// while the rest stay a quiet swarm and finished runs fade out. Under
+// reduced motion only the spotlight renders. Returns your live position.
+function styleGhosts() {
+  if (!ghosts.length) return 1;
+  const primary = ghosts.find((g) => g.primary) || null;
+  let nearest = null;
+  let gap = Infinity;
+  let ahead = 0;
+  for (const g of ghosts) {
+    const running = g.game.alive && !g.game.won;
+    const score = running ? g.game.score : (g.finalScore ?? g.game.score);
+    if (score > game.score) {
+      ahead++;
+      if (score - game.score < gap) { gap = score - game.score; nearest = g; }
+    }
+  }
+  const spotlight = primary || nearest || ghosts[0];
+  for (const g of ghosts) {
+    const running = g.game.alive && !g.game.won;
+    if (g === spotlight) {
+      g.renderAlpha = running ? 0.3 : 0.12;
+      g.showName = true;
+    } else {
+      g.renderAlpha = renderer.reduceMotion ? 0 : running ? 0.12 : 0.05;
+      g.showName = false;
+    }
+  }
+  return ahead + 1;
+}
+
+// Live position pill in the stats bar ("P4 · 11 racers").
+let raceStripText = '';
+function updateRaceStrip(text, lead = false) {
+  const el = $('race-pos');
+  if (text === null) {
+    el.hidden = true;
+    raceStripText = '';
+    return;
+  }
+  if (text !== raceStripText) {
+    raceStripText = text;
+    el.textContent = text;
+    el.classList.toggle('lead', lead);
+    el.hidden = false;
+  }
+}
+
 function tick(now) {
   if (state !== 'playing') return;
   const dt = Math.min(250, now - lastTime);
   lastTime = now;
   accumulator += dt;
 
-  if (ghost) advanceGhost(dt);
+  for (const g of ghosts) advanceGhost(g, dt);
 
   let steps = 0;
   while (accumulator >= game.speed && steps < MAX_STEPS_PER_FRAME) {
@@ -480,8 +677,11 @@ function tick(now) {
   // Drop any backlog we didn't consume so the next frame doesn't teleport.
   if (accumulator > game.speed) accumulator = game.speed;
 
+  const pos = styleGhosts();
+  if (ghosts.length) updateRaceStrip(`P${pos} · ${ghosts.length + 1} racers`, pos === 1);
+
   const alpha = Math.min(1, accumulator / game.speed);
-  draw(renderer, game, prevSnake, alpha, { monthLabels, ghost, showCombo: true });
+  draw(renderer, game, prevSnake, alpha, { monthLabels, ghosts, showCombo: true });
   requestAnimationFrame(tick);
 }
 
@@ -490,7 +690,7 @@ function dyingTick() {
     finishRun(false);
     return;
   }
-  draw(renderer, game, null, 1, { monthLabels, ghost });
+  draw(renderer, game, null, 1, { monthLabels, ghosts });
   requestAnimationFrame(dyingTick);
 }
 
@@ -498,19 +698,26 @@ function dyingTick() {
 let spectReturn = 'leaderboard';
 
 function beginSpectate(data, { label, returnTo = 'leaderboard' } = {}) {
-  spect = { inputs: data.inputs, ptr: 0, name: data.name, score: data.score };
-  spectReturn = returnTo;
-  mode = data.mode;
-  session = null;
-  ghost = null;
-  monthLabels = data.months || null;
-  game = createGame({
+  // params rebuild the exact same game — used again by click-to-seek.
+  const params = {
     mode: data.mode,
     seed: data.seed,
     graph: data.graph || null,
     wrap: data.wrap || false,
     speedFactor: data.speedFactor || 1,
-  });
+    rotten: data.rotten || false,
+    rules: data.rules || 1, // replay under the rules the run was recorded with
+  };
+  spect = { inputs: data.inputs, ptr: 0, name: data.name, score: data.score, params };
+  spectReturn = returnTo;
+  spectSpeed = 1;
+  $('btn-spect-speed').textContent = '1×';
+  $('spect-fill').style.width = '0%';
+  mode = data.mode;
+  session = null;
+  ghosts = [];
+  monthLabels = data.months || null;
+  game = createGame(params);
   const { cols, rows } = boardSize(data.mode);
   if (renderer.cols !== cols || renderer.rows !== rows) resizeBoard(renderer, cols, rows);
   clearEffects(renderer);
@@ -555,14 +762,56 @@ function watchLocalBest() {
   });
 }
 
+// Approximate playback progress: the last logged input's step index is a
+// close stand-in for the run's length without pre-replaying the whole log.
+function updateSpectProgress() {
+  const inputs = spect.inputs;
+  const lastStep = inputs.length ? inputs[inputs.length - 1].s : 0;
+  $('spect-fill').style.width = lastStep
+    ? `${Math.min(100, (game.stepCount / lastStep) * 100)}%`
+    : '100%';
+}
+
+// Click-to-seek: the core is deterministic, so jumping to any point is just
+// re-simulating from step 0 (milliseconds even for long runs) and resuming
+// playback from there.
+function seekSpectate(fraction) {
+  if (!spect) return;
+  const inputs = spect.inputs;
+  const lastStep = inputs.length ? inputs[inputs.length - 1].s : 0;
+  const target = Math.max(0, Math.floor(fraction * lastStep));
+  game = createGame(spect.params);
+  spect.ptr = 0;
+  while (game.alive && !game.won && game.stepCount < target) {
+    while (spect.ptr < inputs.length && inputs[spect.ptr].s === game.stepCount) {
+      queueInput(game, inputs[spect.ptr].d, false);
+      spect.ptr++;
+    }
+    step(game);
+  }
+  prevSnake = null;
+  accumulator = 0;
+  clearEffects(renderer);
+  updateSpectProgress();
+  updateUI();
+  draw(renderer, game, null, 1, { monthLabels });
+  // Seeking back from the finished state resumes the playback loop.
+  if (state === 'spectate-done' && game.alive && !game.won) {
+    state = 'spectating';
+    lastTime = performance.now();
+    requestAnimationFrame(spectateTick);
+  }
+}
+
 function spectateTick(now) {
   if (state !== 'spectating') return;
   const dt = Math.min(250, now - lastTime);
   lastTime = now;
-  accumulator += dt;
+  accumulator += dt * spectSpeed;
 
   let steps = 0;
-  while (accumulator >= game.speed && game.alive && !game.won && steps < MAX_STEPS_PER_FRAME) {
+  const maxSteps = MAX_STEPS_PER_FRAME * spectSpeed;
+  while (accumulator >= game.speed && game.alive && !game.won && steps < maxSteps) {
     prevSnake = game.snake.map((s) => ({ ...s }));
     while (spect.ptr < spect.inputs.length && spect.inputs[spect.ptr].s === game.stepCount) {
       queueInput(game, spect.inputs[spect.ptr].d, false);
@@ -578,10 +827,13 @@ function spectateTick(now) {
   }
   if (accumulator > game.speed) accumulator = game.speed;
 
+  updateSpectProgress();
+
   if (!game.alive || game.won) {
     // Hold the final frame briefly, then return to the leaderboard.
+    $('spect-fill').style.width = '100%';
     draw(renderer, game, null, 1, {});
-    setTimeout(() => { if (state === 'spectating') exitSpectate(); }, 900);
+    setTimeout(() => { if (state === 'spectate-done') exitSpectate(); }, 900);
     state = 'spectate-done';
     return;
   }
@@ -629,21 +881,24 @@ function exitSpectate({ toMenu = false } = {}) {
 function finishRun(won) {
   state = 'over';
   updatePauseButton();
-  const best = Math.max(getHighScore(), game.score);
+  const prevBest = getHighScore();
+  const isNewBest = game.score > prevBest && game.score > 0;
+  const best = Math.max(prevBest, game.score);
   localStorage.setItem(highScoreKey(), String(best));
   updateUI();
 
   recordStats();
 
   // Unlock achievements from the freshly-updated lifetime stats plus this run.
-  const variant = !!(game.wrap || (game.speedFactor && game.speedFactor !== 1));
+  const variant = !!(game.wrap || (game.speedFactor && game.speedFactor !== 1) || game.rottenVariant);
   const unlocked = evaluateAchievements({
     stats: loadStats(),
-    run: { score: game.score, bestStreak: game.bestStreak, won, mode, variant },
+    run: { score: game.score, bestStreak: game.bestStreak, won, mode, variant, golden: game.goldenEaten },
   });
   for (const a of unlocked) toast(a.icon, `${a.name} unlocked`, a.desc);
 
-  // Keep your best run per mode locally so it can be re-watched anytime.
+  // Keep your best run per mode locally so it can be re-watched (and raced as
+  // a ghost) anytime. The rules version rides along so replays stay faithful.
   if (game.stepCount > 0) {
     const runKey = `gh-snake-bestrun-${mode}`;
     const prevRun = JSON.parse(localStorage.getItem(runKey) || 'null');
@@ -651,10 +906,14 @@ function finishRun(won) {
       localStorage.setItem(runKey, JSON.stringify({
         mode,
         seed: game.seed,
+        rules: game.rules,
         inputs: game.inputLog,
         score: game.score,
         wrap: game.wrap || undefined,
         speedFactor: game.speedFactor !== 1 ? game.speedFactor : undefined,
+        rotten: game.rottenVariant || undefined,
+        day: mode === 'daily' ? session?.day : undefined,
+        username: mode === 'graph' ? graphData.username : undefined,
         graph: mode === 'graph' ? graphData.grid : undefined,
         months: mode === 'graph' ? graphData.months : undefined,
       }));
@@ -670,18 +929,79 @@ function finishRun(won) {
     }
   }
 
-  const eaten = game.totalCells ? game.totalCells - game.cells.size : 0;
-  const statsHtml =
-    mode === 'graph'
-      ? `<strong>${game.score}</strong> points · ate <strong>${eaten}</strong>/${game.totalCells} days<br>
-         Best streak: <strong>${game.bestStreak}</strong> · Best score: <strong>${best}</strong>`
-      : `<strong>${game.score}</strong> contributions · <strong>${game.bestStreak}</strong> best streak<br>
-         Best: <strong>${best}</strong> contributions`;
+  // Daily is one-shot: once a score is ranked today, later runs are practice.
+  const dailyResult = mode === 'daily' && session?.day
+    ? JSON.parse(localStorage.getItem(`gh-snake-daily-${session.day}`) || 'null')
+    : null;
+  const dailyRanked = !!dailyResult?.rank;
+  const canSubmit = !!session && serverOk && !dailyRanked;
 
-  const canSubmit = !!session && serverOk;
+  // Headline numbers as stat blocks (same visual language as the stats
+  // panel) instead of prose lines that repeat each other.
+  const eaten = game.totalCells ? game.totalCells - game.cells.size : 0;
+  const blocks = mode === 'graph'
+    ? [
+      [game.score, 'points'],
+      [`${eaten}/${game.totalCells}`, 'days eaten'],
+      [game.bestStreak, 'best streak'],
+      [best, 'best score'],
+    ]
+    : [
+      [game.score, 'contributions'],
+      [game.bestStreak, 'best streak'],
+      ...(game.goldenEaten > 0 ? [[game.goldenEaten, 'golden']] : []),
+      [best, 'best'],
+    ];
+  let statsHtml = `<div class="over-stat-row">${blocks.map(([n, label]) =>
+    `<div class="stat-block"><div class="stat-number">${n}</div><div class="stat-name">${label}</div></div>`).join('')}</div>`;
+
+  // Race verdicts. A spotlit rival gets the head-to-head line; a crowd race
+  // says where you finished in today's field (by everyone's final score) —
+  // which doubles as the submit nudge, so previewRank stays out of the way.
+  const verdicts = [];
+  const rival = ghosts.find((g) => g.primary) || (ghosts.length === 1 ? ghosts[0] : null);
+  if (rival && rival.finalScore != null) {
+    const diff = game.score - rival.finalScore;
+    const who = escapeHtml(rival.name);
+    verdicts.push(diff > 0
+      ? `You beat ${who} (${rival.finalScore}) by <strong>${diff}</strong>!`
+      : diff === 0
+        ? `Dead heat with ${who} — <strong>${rival.finalScore}</strong> each.`
+        : `${who} finished <strong>${-diff}</strong> ahead (${rival.finalScore}).`);
+  }
+  let fieldPos = null;
+  let fieldSize = null;
+  if (ghosts.length >= 2) {
+    const finals = ghosts.filter((g) => g.finalScore != null);
+    fieldPos = 1 + finals.filter((g) => g.finalScore > game.score).length;
+    fieldSize = finals.length + 1;
+    let line = `You finished <strong>#${fieldPos}</strong> of ${fieldSize} in today's field`;
+    if (!rival) {
+      // No named rival: point at the nearest runs either side of you.
+      const sorted = [...finals].sort((a, b) => a.finalScore - b.finalScore);
+      const aheadG = sorted.find((g) => g.finalScore > game.score);
+      const behindG = [...sorted].reverse().find((g) => g.finalScore <= game.score);
+      const bits = [];
+      if (aheadG) bits.push(`${aheadG.finalScore - game.score} behind ${escapeHtml(aheadG.name)}`);
+      if (behindG) {
+        bits.push(game.score === behindG.finalScore
+          ? `level with ${escapeHtml(behindG.name)}`
+          : `${game.score - behindG.finalScore} ahead of ${escapeHtml(behindG.name)}`);
+      }
+      if (bits.length) line += ` — ${bits.join(', ')}`;
+    }
+    verdicts.push(`${line}.${canSubmit ? ' Submit it!' : ''}`);
+  }
+  statsHtml += `<div class="over-verdicts">${verdicts.map((v) => `<div>${v}</div>`).join('')}</div>`;
+
+  const causeLine = lastDeathCause === 'wall' ? 'Ran into the wall'
+    : lastDeathCause === 'self' ? 'Bit your own tail' : null;
+  const modeLine = mode === 'daily'
+    ? `Daily challenge · ${session?.day || ''}${dailyRanked ? ' · practice (first score counts)' : ''}`
+    : 'Don’t break the build.';
   showOverlay(
-    won ? 'You ate the whole year!' : 'Game Over',
-    won ? 'Every contribution devoured.' : mode === 'daily' ? `Daily challenge · ${session?.day || ''}` : 'Don’t break the build.',
+    won ? 'You ate the whole year!' : isNewBest ? 'New personal best!' : 'Game Over',
+    won ? 'Every contribution devoured.' : causeLine ? `${causeLine} · ${modeLine}` : modeLine,
     ['over-stats', 'over-actions', 'share-row', ...(canSubmit ? ['submit-row'] : [])]
   );
   $('share-native').hidden = !navigator.share;
@@ -690,11 +1010,39 @@ function finishRun(won) {
     $('name-input').value = localStorage.getItem('gh-snake-name') || '';
     $('btn-submit').disabled = false;
     $('btn-submit').textContent = 'Submit score';
+    // The crowd-race field verdict already says where you'd land (and nudges
+    // the submit), so the async rank preview only runs without one.
+    if (fieldPos == null) previewRank();
   }
   const unlockedMsg = unlocked.length
     ? ` Achievement${unlocked.length > 1 ? 's' : ''} unlocked: ${unlocked.map((a) => a.name).join(', ')}.`
     : '';
-  announce(`Game over. ${game.score} points, best streak ${game.bestStreak}.${unlockedMsg}`);
+  const verdictMsg = rival && rival.finalScore != null
+    ? (game.score > rival.finalScore
+      ? ` You beat ${rival.name} by ${game.score - rival.finalScore}.`
+      : game.score === rival.finalScore
+        ? ` Dead heat with ${rival.name}.`
+        : ` ${rival.name} finished ${rival.finalScore - game.score} ahead.`)
+    : fieldPos != null ? ` Finished number ${fieldPos} of ${fieldSize} in today's field.` : '';
+  announce(`${won ? 'You won!' : isNewBest ? 'New personal best!' : 'Game over.'} `
+    + `${game.score} points, best streak ${game.bestStreak}.${verdictMsg}${unlockedMsg}`);
+}
+
+// Tease where this score would land before the player decides to submit.
+async function previewRank() {
+  if (game.score <= 0) return;
+  const scoreAtCall = game.score;
+  try {
+    const { entries } = await (mode === 'graph'
+      ? api.getLeaderboard('graph', null, graphData.username)
+      : api.getLeaderboard(mode === 'daily' ? 'daily' : 'classic',
+        mode === 'daily' ? session.day : undefined));
+    if (state !== 'over' || submitted || game.score !== scoreAtCall) return;
+    const rank = entries.filter((e) => e.score > scoreAtCall).length + 1;
+    if (rank > 20 && entries.length >= 20) return; // wouldn't make the board
+    $('over-stats').querySelector('.over-verdicts')?.insertAdjacentHTML('beforeend',
+      `<div>This run would rank <strong>#${rank}</strong>${mode === 'daily' ? ' today' : ''} — submit it!</div>`);
+  } catch { /* preview only — never block the game-over screen */ }
 }
 
 // --- pause / resume ---
@@ -702,7 +1050,10 @@ function pauseGame() {
   if (state !== 'playing') return;
   state = 'paused';
   updatePauseButton();
-  showOverlay('Paused', 'Take a break. Your streak will wait.', ['btn-resume']);
+  const streakBit = game.streak > 0 ? ` · streak ${game.streak}` : '';
+  showOverlay('Paused',
+    `Score ${game.score}${streakBit}. Take a break — your streak will wait.`,
+    ['btn-resume']);
 }
 
 function resumeGame() {
@@ -724,21 +1075,33 @@ function resumeGame() {
 }
 
 let countdownTimers = [];
+let countdownDone = null; // pending completion — lets input skip the 3-2-1
 function clearCountdown() {
   countdownTimers.forEach(clearTimeout);
   countdownTimers = [];
+  countdownDone = null;
   $('countdown').hidden = true;
+}
+
+// A direction key or board tap cuts the countdown short — after the first few
+// games the 3-2-1 is ritual, not information. Returns true if it skipped.
+function skipCountdown() {
+  if (!countdownDone) return false;
+  const done = countdownDone;
+  clearCountdown();
+  done();
+  return true;
 }
 
 function runCountdown(done) {
   clearCountdown();
+  countdownDone = done;
   const el = $('countdown');
   const steps = ['3', '2', '1'];
   el.hidden = false;
   const show = (i) => {
     if (i >= steps.length) {
-      clearCountdown();
-      done();
+      skipCountdown(); // natural finish: same path as a manual skip
       return;
     }
     el.textContent = steps[i];
@@ -746,7 +1109,7 @@ function runCountdown(done) {
     void el.offsetWidth; // restart the CSS pop animation
     el.classList.add('tick');
     audio.playClick();
-    if (game) draw(renderer, game, null, 1, { monthLabels, ghost });
+    if (game) draw(renderer, game, null, 1, { monthLabels, ghosts });
     countdownTimers.push(setTimeout(() => show(i + 1), 500));
   };
   show(0);
@@ -758,6 +1121,12 @@ function togglePause() {
 }
 
 // --- leaderboard ---
+// The username whose graph leaderboard to show: the graph you just played,
+// falling back to the last one you searched for.
+function graphLbUser() {
+  return graphData?.username || localStorage.getItem('gh-snake-user') || null;
+}
+
 async function renderLeaderboard(lbMode, dayOverride) {
   const el = $('leaderboard');
   el.hidden = false;
@@ -766,11 +1135,14 @@ async function renderLeaderboard(lbMode, dayOverride) {
     const day = lbMode === 'daily'
       ? (dayOverride || new Date().toISOString().slice(0, 10))
       : undefined;
-    const { entries, day: actualDay } = await api.getLeaderboard(lbMode, day);
+    const user = lbMode === 'graph' ? graphLbUser() : undefined;
+    const { entries, day: actualDay } = await api.getLeaderboard(lbMode, day, user);
     if (!entries.length) {
-      el.innerHTML = `<div class="lb-empty">No scores yet${lbMode === 'daily' ? ' today' : ''}. Be the first!</div>`;
+      el.innerHTML = `<div class="lb-empty">No scores yet${lbMode === 'daily' ? ' today' : ''}${lbMode === 'graph' ? ` on @${escapeHtml(user)}'s graph` : ''}. Be the first!</div>`;
       return;
     }
+    // Today's daily runs share today's seed, so any of them can be raced live.
+    const raceable = lbMode === 'daily' && !dayOverride && serverOk;
     const myName = localStorage.getItem('gh-snake-name');
     el.innerHTML = entries.map((e, i) => `
       <div class="lb-row${e.name === myName ? ' me' : ''}${e.replayId ? ' watchable' : ''}"
@@ -778,11 +1150,17 @@ async function renderLeaderboard(lbMode, dayOverride) {
         <span class="lb-rank">${i + 1}</span>
         <span class="lb-name">${escapeHtml(e.name)}</span>
         <span class="lb-score">${e.score}</span>
+        ${e.replayId && raceable ? `<button class="lb-race" type="button" data-race="${escapeHtml(e.replayId)}"
+            title="Race this run" aria-label="Race ${escapeHtml(e.name)}'s run">${icons.race}</button>` : ''}
         ${e.replayId ? `<span class="lb-watch" aria-hidden="true">${icons.play}</span>` : ''}
       </div>`).join('');
     if (lbMode === 'daily' && actualDay) {
       el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Daily · ${actualDay}</div>`);
+    } else if (lbMode === 'graph') {
+      el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Graph · @${escapeHtml(user)}</div>`);
     }
+    // Bring your own row into view — most useful right after submitting.
+    el.querySelector('.lb-row.me')?.scrollIntoView({ block: 'nearest' });
   } catch (err) {
     el.innerHTML = `<div class="lb-empty">Couldn't load leaderboard: ${escapeHtml(err.message)}</div>`;
   }
@@ -795,7 +1173,7 @@ function escapeHtml(s) {
 }
 
 function setActiveTab(activeId) {
-  for (const id of ['lb-tab-classic', 'lb-tab-daily', 'lb-tab-yesterday']) {
+  for (const id of ['lb-tab-classic', 'lb-tab-daily', 'lb-tab-yesterday', 'lb-tab-graph']) {
     const btn = $(id);
     const on = id === activeId;
     btn.classList.toggle('active', on);
@@ -804,10 +1182,11 @@ function setActiveTab(activeId) {
   }
 }
 
-function showLeaderboardScreen() {
+function showLeaderboardScreen(initialTab = 'classic') {
   showOverlay('Leaderboard', 'Server-verified scores.', ['lb-tabs', 'leaderboard']);
-  setActiveTab('lb-tab-classic');
-  renderLeaderboard('classic');
+  $('lb-tab-graph').hidden = !graphLbUser();
+  setActiveTab(`lb-tab-${initialTab}`);
+  renderLeaderboard(initialTab);
 }
 
 function showStatsScreen() {
@@ -831,13 +1210,27 @@ function showStatsScreen() {
 
 function showAchievementsScreen() {
   const unlocked = loadUnlocked();
+  const stats = loadStats();
   $('achievements-panel').innerHTML = ACHIEVEMENTS.map((a) => {
     const got = unlocked.has(a.id);
+    // Locked threshold achievements show how close you are.
+    let progressHtml = '';
+    if (!got && a.progress) {
+      const [now, goal] = a.progress(stats);
+      const shown = Math.min(now, goal);
+      progressHtml = `
+        <div class="achv-progress" aria-label="${shown} of ${goal}">
+          <div class="achv-progress-track"><div class="achv-progress-fill"
+               style="width:${Math.min(100, (now / goal) * 100)}%"></div></div>
+          <span class="achv-progress-num">${shown}/${goal}</span>
+        </div>`;
+    }
     return `<div class="achv ${got ? 'unlocked' : 'locked'}">
       <div class="achv-badge" aria-hidden="true">${a.icon}</div>
       <div class="achv-text">
         <div class="achv-name">${escapeHtml(a.name)}</div>
         <div class="achv-desc">${escapeHtml(a.desc)}</div>
+        ${progressHtml}
       </div>
       ${got ? `<span class="achv-check" aria-hidden="true">${icons.check}</span>` : ''}
     </div>`;
@@ -884,9 +1277,10 @@ async function handleSubmit() {
         JSON.stringify({ score: result.score, rank: result.rank }));
     }
     $('submit-row').hidden = true;
-    $('overlay-sub').textContent = `Verified! You're #${result.rank} ${mode === 'daily' ? 'today' : 'all-time'}.`;
+    $('overlay-sub').textContent = `Verified! You're #${result.rank} ${
+      mode === 'daily' ? 'today' : mode === 'graph' ? `on @${graphData.username}'s graph` : 'all-time'}.`;
     $('leaderboard').hidden = false;
-    renderLeaderboard(mode === 'daily' ? 'daily' : 'classic');
+    renderLeaderboard(mode === 'daily' ? 'daily' : mode === 'graph' ? 'graph' : 'classic');
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'Submit score';
@@ -970,11 +1364,25 @@ document.addEventListener('keydown', (e) => {
     }
     return;
   }
+  // Instant rematch from the game-over screen.
+  if ((e.key === 'r' || e.key === 'R') && state === 'over'
+      && document.activeElement?.tagName !== 'INPUT') {
+    e.preventDefault();
+    audio.unlock();
+    startRun(mode);
+    return;
+  }
   const d = KEY_DIRS[e.key];
   if (d === undefined) return;
   // Don't hijack arrows while typing a username or name.
   if (document.activeElement?.tagName === 'INPUT') return;
   e.preventDefault();
+  // A direction key during the 3-2-1 skips it and steers immediately.
+  if (state === 'resuming' && skipCountdown()) {
+    audio.unlock();
+    queueInput(game, d);
+    return;
+  }
   if (state === 'playing') {
     audio.unlock();
     queueInput(game, d);
@@ -984,6 +1392,7 @@ document.addEventListener('keydown', (e) => {
 document.querySelectorAll('.touch-btn[data-dir]').forEach((btn) => {
   btn.addEventListener('touchstart', (e) => {
     e.preventDefault();
+    if (state === 'resuming') skipCountdown(); // d-pad also skips the 3-2-1
     if (state === 'playing') {
       audio.unlock();
       // Only buzz when the input actually changes direction (queueInput returns
@@ -995,23 +1404,48 @@ document.querySelectorAll('.touch-btn[data-dir]').forEach((btn) => {
   }, { passive: false });
 });
 
-// Swipe to steer, tap to pause — directly on the board.
+// Swipe to steer, tap to pause — directly on the board. Steering triggers on
+// touchmove (as soon as the finger travels far enough) rather than waiting
+// for the finger to lift, so flick-and-hold gestures turn a beat sooner at
+// high speed; the origin re-arms after each turn so one continuous drag can
+// chain several turns.
 let touchStartX = 0, touchStartY = 0, touchStartT = 0;
+let touchSteered = false;
+const SWIPE_PX = 24;
+
 canvas.addEventListener('touchstart', (e) => {
   const t = e.changedTouches[0];
   touchStartX = t.clientX;
   touchStartY = t.clientY;
   touchStartT = Date.now();
+  touchSteered = false;
 }, { passive: true });
 
-canvas.addEventListener('touchend', (e) => {
+canvas.addEventListener('touchmove', (e) => {
+  if (state !== 'playing') return;
   const t = e.changedTouches[0];
   const dx = t.clientX - touchStartX;
   const dy = t.clientY - touchStartY;
   const absX = Math.abs(dx), absY = Math.abs(dy);
-  if (absX < 24 && absY < 24) {
+  if (absX < SWIPE_PX && absY < SWIPE_PX) return;
+  audio.unlock();
+  if (absX > absY) queueInput(game, dx > 0 ? 1 : 3);
+  else queueInput(game, dy > 0 ? 2 : 0);
+  touchSteered = true;
+  touchStartX = t.clientX;
+  touchStartY = t.clientY;
+}, { passive: true });
+
+canvas.addEventListener('touchend', (e) => {
+  if (touchSteered) return; // the move handler already steered this gesture
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStartX;
+  const dy = t.clientY - touchStartY;
+  const absX = Math.abs(dx), absY = Math.abs(dy);
+  if (absX < SWIPE_PX && absY < SWIPE_PX) {
     if (Date.now() - touchStartT < 300) {
-      if (state === 'spectating' || state === 'spectate-done') exitSpectate();
+      if (state === 'resuming') skipCountdown(); // tap skips the 3-2-1
+      else if (state === 'spectating' || state === 'spectate-done') exitSpectate();
       else togglePause();
     }
     return;
@@ -1044,7 +1478,7 @@ $('share-bluesky').addEventListener('click', () => shareToNetwork('bluesky'));
 $('share-threads').addEventListener('click', () => shareToNetwork('threads'));
 $('share-native').addEventListener('click', shareNative);
 $('submit-row').addEventListener('submit', (e) => { e.preventDefault(); handleSubmit(); });
-$('btn-leaderboard').addEventListener('click', showLeaderboardScreen);
+$('btn-leaderboard').addEventListener('click', () => showLeaderboardScreen());
 $('lb-tab-classic').addEventListener('click', () => { setActiveTab('lb-tab-classic'); renderLeaderboard('classic'); });
 $('lb-tab-daily').addEventListener('click', () => { setActiveTab('lb-tab-daily'); renderLeaderboard('daily'); });
 $('lb-tab-yesterday').addEventListener('click', () => {
@@ -1052,6 +1486,7 @@ $('lb-tab-yesterday').addEventListener('click', () => {
   setActiveTab('lb-tab-yesterday');
   renderLeaderboard('daily', yesterday);
 });
+$('lb-tab-graph').addEventListener('click', () => { setActiveTab('lb-tab-graph'); renderLeaderboard('graph'); });
 $('lb-back').addEventListener('click', showStartScreen);
 $('btn-watch-best').addEventListener('click', watchLocalBest);
 $('btn-watch-shared').addEventListener('click', () => {
@@ -1070,14 +1505,39 @@ $('var-chill').addEventListener('change', (e) => {
   localStorage.setItem('gh-snake-var-chill', e.target.checked ? '1' : '0');
   updateVariantNote();
 });
+$('var-rotten').addEventListener('change', (e) => {
+  localStorage.setItem('gh-snake-var-rotten', e.target.checked ? '1' : '0');
+  updateVariantNote();
+});
+$('var-race').addEventListener('change', (e) => {
+  localStorage.setItem('gh-snake-var-race', e.target.checked ? '1' : '0');
+  updateVariantNote();
+});
+$('btn-spect-speed').addEventListener('click', () => {
+  spectSpeed = spectSpeed >= 4 ? 1 : spectSpeed * 2;
+  $('btn-spect-speed').textContent = `${spectSpeed}×`;
+});
+$('spect-bar').addEventListener('click', (e) => {
+  if (state !== 'spectating' && state !== 'spectate-done') return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  seekSpectate((e.clientX - rect.left) / rect.width);
+});
 
-// Click (or keyboard-activate) a leaderboard row to watch that run.
+// Click (or keyboard-activate) a leaderboard row to watch that run; the race
+// button inside a row starts a live run against it instead.
 $('leaderboard').addEventListener('click', (e) => {
+  const race = e.target.closest('[data-race]');
+  if (race) {
+    audio.unlock();
+    startRun('daily', { raceReplayId: race.dataset.race });
+    return;
+  }
   const row = e.target.closest('[data-replay]');
   if (row) startSpectate(row.dataset.replay);
 });
 $('leaderboard').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.target.closest('[data-race]')) return; // native button handles it
   const row = e.target.closest('[data-replay]');
   if (row) { e.preventDefault(); startSpectate(row.dataset.replay); }
 });
@@ -1087,18 +1547,57 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && state === 'playing') pauseGame();
 });
 
+// --- PWA install nudge ---
+// The browser only fires this when the app is installable and not installed;
+// stash the prompt and surface a quiet "Install app" link on the start menu.
+let installPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  if (state === 'idle' && $('mode-buttons') && !$('mode-buttons').hidden) {
+    $('btn-install').hidden = false;
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  $('btn-install').hidden = true;
+});
+
+$('btn-install').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  const prompt = installPrompt;
+  installPrompt = null;
+  $('btn-install').hidden = true;
+  prompt.prompt();
+  await prompt.userChoice.catch(() => {});
+});
+
+const THEME_ICONS = { auto: icons.autoTheme, dark: icons.moon, light: icons.sun };
+const THEME_LABELS = {
+  auto: 'Theme: auto (follows system)', dark: 'Theme: dark', light: 'Theme: light',
+};
+
 function refreshTheme() {
-  theme = applyTheme(themeName, palette);
+  theme = applyTheme(themeSetting, palette);
   renderer.theme = theme;
-  $('theme-btn').innerHTML = themeName === 'dark' ? icons.moon : icons.sun;
+  $('theme-btn').innerHTML = THEME_ICONS[themeSetting];
+  $('theme-btn').setAttribute('aria-label', THEME_LABELS[themeSetting]);
   if (game && state !== 'playing' && state !== 'spectating') {
-    draw(renderer, game, null, 1, { monthLabels, ghost });
+    draw(renderer, game, null, 1, { monthLabels, ghosts });
   }
 }
 
+// Cycle dark → light → auto; auto tracks the system scheme live.
 $('theme-btn').addEventListener('click', () => {
-  themeName = themeName === 'dark' ? 'light' : 'dark';
+  themeSetting = { dark: 'light', light: 'auto', auto: 'dark' }[themeSetting];
   refreshTheme();
+  announce(THEME_LABELS[themeSetting]);
+});
+
+window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if (themeSetting === 'auto') refreshTheme();
 });
 
 $('palette-btn').addEventListener('click', () => {
@@ -1119,7 +1618,7 @@ $('sound-btn').addEventListener('click', () => {
 window.addEventListener('resize', () => {
   if (!renderer.cols) return;
   resizeBoard(renderer, renderer.cols, renderer.rows);
-  if (game) draw(renderer, game, null, 1, { monthLabels, ghost });
+  if (game) draw(renderer, game, null, 1, { monthLabels, ghosts });
 });
 
 // Register service worker for offline play (production only).
@@ -1134,7 +1633,8 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
   // One-time: re-lock the achievements whose bars were raised so they're re-earned.
   reconcileUnlocked();
 
-  $('theme-btn').innerHTML = themeName === 'dark' ? icons.moon : icons.sun;
+  $('theme-btn').innerHTML = THEME_ICONS[themeSetting];
+  $('theme-btn').setAttribute('aria-label', THEME_LABELS[themeSetting]);
   $('palette-btn').innerHTML = icons.palette;
   $('sound-btn').innerHTML = audio.isMuted() ? icons.volumeOff : icons.volumeOn;
   $('share-native').innerHTML = icons.share;

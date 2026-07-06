@@ -15,6 +15,7 @@ const C = {
   accent: [57, 211, 83],
   levels: [[14, 68, 41], [0, 109, 50], [38, 166, 65], [57, 211, 83]],
   food: [57, 211, 83],
+  gold: [227, 179, 65],
 };
 
 // 5x7 pixel font — each glyph is 7 rows of 5 bits, MSB = left column.
@@ -112,7 +113,9 @@ export function renderOgImage({ final, name, score, mode, day }) {
   drawText(png, 'CONTRIBUTION SNAKE', 60, 48, 5, C.text);
   const nameEnd = drawText(png, name, 60, 108, 4, C.accent);
   drawText(png, ` - ${score} PTS`, nameEnd, 108, 4, C.text);
-  const modeLine = mode === 'daily' ? `DAILY ${day}` : 'CLASSIC';
+  // Graph boards key the day column by username; surface it as @user.
+  const modeLine = mode === 'daily' ? `DAILY ${day}`
+    : mode === 'graph' ? `GRAPH @${day}` : 'CLASSIC';
   drawText(png, `${modeLine}   BEST STREAK ${final.bestStreak}`, 60, 158, 3, C.muted);
 
   // Final board, centered under the header (ends above the footer line).
@@ -128,15 +131,24 @@ export function renderOgImage({ final, name, score, mode, day }) {
       rect(png, bx + x * step, by + y * step, cell, cell, C.empty);
     }
   }
-  if (final.food) {
+  if (final.cells) {
+    for (const [key, lvl] of final.cells) {
+      const [x, y] = key.split(',').map(Number);
+      rect(png, bx + x * step, by + y * step, cell, cell, C.levels[lvl - 1]);
+    }
+  }
+  if (final.mode !== 'graph' && final.food) {
     rect(png, bx + final.food.x * step, by + final.food.y * step, cell, cell, C.food);
+  }
+  if (final.golden) {
+    rect(png, bx + final.golden.x * step, by + final.golden.y * step, cell, cell, C.gold);
   }
   final.snake.forEach((seg, i) => {
     rect(png, bx + seg.x * step, by + seg.y * step, cell, cell,
       segmentColor(i, final.snake.length));
   });
 
-  const footer = "DON'T BREAK THE BUILD.";
+  const footer = final.won ? 'ATE THE WHOLE YEAR.' : "DON'T BREAK THE BUILD.";
   drawText(png, footer, W - 60 - textWidth(footer, 2), H - 26, 2, C.muted);
 
   return PNG.sync.write(png);

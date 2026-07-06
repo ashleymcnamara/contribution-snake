@@ -58,12 +58,15 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
   ctx.fillStyle = theme.textMuted;
   ctx.fillText(username ? `${modeLabel} · @${username}` : modeLabel, 66, 112);
 
-  // Stats
+  // Stats — the level slot gives way to golden commits when any were eaten
+  // (more interesting, and keeps the row from overflowing the card).
   const stats = [
     [String(game.score), 'contributions'],
     [String(game.bestStreak), 'best streak'],
     [String(game.snake.length), 'snake length'],
-    [String(game.level), 'level'],
+    game.goldenEaten > 0
+      ? [String(game.goldenEaten), 'golden commits']
+      : [String(game.level), 'level'],
   ];
   let sx = 64;
   for (const [value, label] of stats) {

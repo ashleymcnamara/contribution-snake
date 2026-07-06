@@ -54,6 +54,16 @@ test('theme, palette, and pause controls', async ({ page }) => {
   await expect(page.locator('#overlay')).toBeHidden();
 });
 
+test('a direction key skips the pre-run countdown and steers immediately', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#btn-classic');
+  await expect(page.locator('#countdown')).toBeVisible();
+  await page.keyboard.press('ArrowUp');
+  // Skipped well before the 1.5s countdown would finish on its own.
+  await expect(page.locator('#countdown')).toBeHidden({ timeout: 500 });
+  await expect(page.locator('#pause-btn')).toBeEnabled();
+});
+
 test('graph-mode deep link primes the username', async ({ page }) => {
   await page.goto('/?user=octocat');
   await expect(page.locator('#username-input')).toHaveValue('octocat');
@@ -62,8 +72,11 @@ test('graph-mode deep link primes the username', async ({ page }) => {
 
 test('wrap-walls variant plays unranked and survives the edge', async ({ page }) => {
   await page.goto('/');
+  // Variants live behind a disclosure; open it to reach the toggles.
+  await page.click('#variant-summary');
   await page.check('#var-wrap');
   await expect(page.locator('#variant-note')).toBeVisible();
+  await expect(page.locator('#variant-summary')).toContainText('wrap');
 
   await page.click('#btn-classic');
   await expect(page.locator('#board-label')).toContainText('unranked');
@@ -100,6 +113,8 @@ test('finishing a first game unlocks an achievement and opens the panel', async 
   await expect(page.locator('#overlay-title')).toHaveText('Achievements');
   await expect(page.locator('#overlay-sub')).toContainText('unlocked');
   await expect(page.locator('.achv.unlocked').first()).toBeVisible();
+  // Locked threshold achievements show progress from lifetime stats (1 game so far).
+  await expect(page.locator('#achievements-panel')).toContainText('1/10');
   await page.click('#achievements-back');
   await expect(page.locator('#overlay-title')).toHaveText('Contribution Snake');
 });

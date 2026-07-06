@@ -60,6 +60,17 @@ export function playEat(streak) {
   blip(440 + Math.min(streak, 24) * 28, { type: 'square', dur: 0.07 });
 }
 
+// Bright two-note coin chime for golden commits — reads as "bonus" instantly.
+export function playGolden() {
+  blip(988, { type: 'triangle', dur: 0.06, vol: 0.05 });
+  blip(1319, { type: 'triangle', dur: 0.14, vol: 0.05, when: 0.06 });
+}
+
+// Sour descending buzz for a rotten commit — clearly a mistake, not a death.
+export function playRotten() {
+  blip(240, { type: 'sawtooth', dur: 0.16, vol: 0.045, slide: -90 });
+}
+
 export function playLevelUp() {
   blip(523, { type: 'triangle', dur: 0.09, vol: 0.05 });
   blip(659, { type: 'triangle', dur: 0.09, vol: 0.05, when: 0.09 });
