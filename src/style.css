@@ -482,11 +482,13 @@ canvas {
 }
 .menu-links:has(> button:not([hidden])) { display: flex; }
 
+/* Fixed width (not just min-width) so revealing #variant-note — a long line —
+   wraps within the column instead of widening it and stretching the buttons. */
 .mode-buttons {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 220px;
+  width: 220px;
 }
 
 .mode-buttons .btn { width: 100%; }
