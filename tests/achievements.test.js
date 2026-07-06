@@ -43,18 +43,18 @@ describe('achievements', () => {
   it('gates score and streak milestones on the right thresholds', () => {
     expect(evaluate(ctx({ games: 1, bestScore: 99 })).map((a) => a.id)).not.toContain('century');
     expect(evaluate(ctx({ games: 1, bestScore: 100 })).map((a) => a.id)).toContain('century');
-    // combo-chain needs a streak of 20
-    expect(evaluate(ctx({ bestStreak: 19 })).map((a) => a.id)).not.toContain('combo-chain');
-    expect(evaluate(ctx({ bestStreak: 20 })).map((a) => a.id)).toContain('combo-chain');
+    // combo-chain needs a streak of 40
+    expect(evaluate(ctx({ bestStreak: 39 })).map((a) => a.id)).not.toContain('combo-chain');
+    expect(evaluate(ctx({ bestStreak: 40 })).map((a) => a.id)).toContain('combo-chain');
   });
 
   it('gates the harder tiers on their raised thresholds', () => {
     expect(evaluate(ctx({ games: 99 })).map((a) => a.id)).not.toContain('committed');
     expect(evaluate(ctx({ games: 100 })).map((a) => a.id)).toContain('committed');
-    expect(evaluate(ctx({ bestScore: 399 })).map((a) => a.id)).not.toContain('on-fire');
-    expect(evaluate(ctx({ bestScore: 400 })).map((a) => a.id)).toContain('on-fire');
-    expect(evaluate(ctx({ bestStreak: 49 })).map((a) => a.id)).not.toContain('unbroken');
-    expect(evaluate(ctx({ bestStreak: 50 })).map((a) => a.id)).toContain('unbroken');
+    expect(evaluate(ctx({ bestScore: 1999 })).map((a) => a.id)).not.toContain('on-fire');
+    expect(evaluate(ctx({ bestScore: 2000 })).map((a) => a.id)).toContain('on-fire');
+    expect(evaluate(ctx({ bestStreak: 99 })).map((a) => a.id)).not.toContain('unbroken');
+    expect(evaluate(ctx({ bestStreak: 100 })).map((a) => a.id)).toContain('unbroken');
     expect(evaluate(ctx({ dailyStreak: 13 })).map((a) => a.id)).not.toContain('daily-devotee');
     expect(evaluate(ctx({ dailyStreak: 14 })).map((a) => a.id)).toContain('daily-devotee');
   });
@@ -68,7 +68,7 @@ describe('achievements', () => {
     const regular = ACHIEVEMENTS.find((a) => a.id === 'regular');
     expect(regular.progress({ ...zeroStats, games: 3 })).toEqual([3, 10]);
     const unbroken = ACHIEVEMENTS.find((a) => a.id === 'unbroken');
-    expect(unbroken.progress({ ...zeroStats, bestStreak: 12 })).toEqual([12, 50]);
+    expect(unbroken.progress({ ...zeroStats, bestStreak: 12 })).toEqual([12, 100]);
     // Event-based achievements have no meaningful progress.
     expect(ACHIEVEMENTS.find((a) => a.id === 'full-year').progress).toBeUndefined();
     expect(ACHIEVEMENTS.find((a) => a.id === 'gold-rush').progress).toBeUndefined();
@@ -86,20 +86,20 @@ describe('achievements', () => {
     // A player who unlocked everything at the old, easier bars.
     localStorage.setItem('gh-snake-achievements', JSON.stringify(ACHIEVEMENTS.map((a) => a.id)));
     const cleared = reconcileUnlocked().sort();
-    expect(cleared).toEqual(['combo-chain', 'committed', 'daily-devotee', 'on-fire', 'unbroken']);
+    expect(cleared).toEqual(['combo-chain', 'on-fire', 'unbroken']);
     const set = loadUnlocked();
     for (const id of cleared) expect(set.has(id)).toBe(false);
-    for (const id of ['first-bite', 'regular', 'century', 'full-year', 'rule-bender']) {
+    for (const id of ['first-bite', 'regular', 'committed', 'century', 'full-year', 'daily-devotee', 'rule-bender', 'gold-rush']) {
       expect(set.has(id)).toBe(true);
     }
   });
 
   it('reconcile runs only once — a re-earned achievement is not cleared again', () => {
-    localStorage.setItem('gh-snake-achievements', JSON.stringify(['committed']));
-    expect(reconcileUnlocked()).toEqual(['committed']);
-    evaluate(ctx({ games: 100 })); // re-earn at the new bar
-    expect(loadUnlocked().has('committed')).toBe(true);
+    localStorage.setItem('gh-snake-achievements', JSON.stringify(['on-fire']));
+    expect(reconcileUnlocked()).toEqual(['on-fire']);
+    evaluate(ctx({ bestScore: 2000 })); // re-earn at the new bar
+    expect(loadUnlocked().has('on-fire')).toBe(true);
     expect(reconcileUnlocked()).toEqual([]); // guarded: no-op
-    expect(loadUnlocked().has('committed')).toBe(true);
+    expect(loadUnlocked().has('on-fire')).toBe(true);
   });
 });
