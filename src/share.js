@@ -90,7 +90,7 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
   return canvas;
 }
 
-export async function downloadCard(canvas, filename = 'contribution-snake-run.png') {
+export async function downloadCard(canvas, filename = 'gitsnake-run.png') {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
   if (!blob) return;
   const url = URL.createObjectURL(blob);
@@ -129,7 +129,7 @@ export async function nativeShare({ text, url, canvas }) {
     if (canvas && navigator.canShare) {
       const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
       if (blob) {
-        const file = new File([blob], 'contribution-snake.png', { type: 'image/png' });
+        const file = new File([blob], 'gitsnake.png', { type: 'image/png' });
         if (navigator.canShare({ files: [file] })) data.files = [file];
       }
     }
