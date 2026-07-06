@@ -131,6 +131,18 @@ export function createSqliteStore(dbPath) {
       `).all(mode, day, day, limit);
     },
 
+    // Global "Hall of Fame": the highest scores across every mode/board, each
+    // tagged with the mode/day it came from.
+    async getGlobalLeaderboard(limit) {
+      return db.prepare(`
+        SELECT id AS replayId, name, score, best_streak AS bestStreak,
+               created_at AS createdAt, mode, day
+        FROM scores
+        ORDER BY score DESC, created_at ASC
+        LIMIT ?
+      `).all(limit);
+    },
+
     async putReplay(id, data) {
       db.prepare('INSERT INTO replays (id, payload, created_at) VALUES (?, ?, ?)')
         .run(id, JSON.stringify(data), Date.now());

@@ -209,6 +209,14 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
 }
 
 export async function leaderboard(store, { mode: rawMode, day: rawDay, user: rawUser }) {
+  // "All-time" is a cross-board view: the highest scores anywhere, each entry
+  // tagged with the mode/board it came from. Scores aren't comparable across
+  // modes (a graph has far more food than a classic board), so this board is
+  // dominated by graph runs by design — it answers "who's scoring highest".
+  if (rawMode === 'all') {
+    const entries = await store.getGlobalLeaderboard(20);
+    return { status: 200, body: { mode: 'all', day: null, entries } };
+  }
   const mode = rawMode === 'daily' ? 'daily' : rawMode === 'graph' ? 'graph' : 'classic';
   let day = null;
   if (mode === 'daily') {
