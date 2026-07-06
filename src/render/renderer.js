@@ -22,6 +22,9 @@ export function createRenderer(canvas) {
     rows: 0,
     w: 0,
     h: 0,
+    // Follow-camera for boards too wide to fit readably (graph mode on
+    // phones): null when the whole board fits, else { x, viewW }.
+    camera: null,
     theme: null,
     reduceMotion: false,
     // cached offscreen render of the static empty grid (see drawGrid)
@@ -50,19 +53,37 @@ export function resizeBoard(r, cols, rows) {
   r.rows = rows;
   r.w = LABEL_LEFT + PAD + cols * STEP_PX + GAP + PAD;
   r.h = LABEL_TOP + PAD + rows * STEP_PX + GAP + PAD;
-  const dpr = Math.max(1, window.devicePixelRatio || 1);
-  r.canvas.width = Math.round(r.w * dpr);
-  r.canvas.height = Math.round(r.h * dpr);
-  r.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   r.gridTheme = null; // force the grid cache to rebuild at the new size / dpr
   fitBoard(r);
 }
+
+// Size the canvas backing store (only when it actually changes, so redraws
+// between frames don't flash a cleared canvas).
+function setBacking(r, viewW) {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const bw = Math.round(viewW * dpr);
+  const bh = Math.round(r.h * dpr);
+  if (r.canvas.width !== bw || r.canvas.height !== bh) {
+    r.canvas.width = bw;
+    r.canvas.height = bh;
+  }
+  r.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+// Camera threshold: engage only for boards that are both much wider than tall
+// (the 52x7 graph, not the 36x22 classic — classic wants whole-board vision)
+// and would scale below readable cell size when fitted whole.
+const CAM_ASPECT = 4;
+const CAM_MIN_SCALE = 0.55;
 
 // Scale the on-screen board to fit within both the available width and the
 // available viewport height, preserving the aspect ratio (never upscaled past
 // its logical size). Width-only fitting left the board overflowing the screen
 // in landscape / on short viewports, pushing the touch controls out of reach;
 // fitting height too keeps the whole UI on one screen without page scroll.
+// Very wide boards on narrow screens switch to a follow-camera instead of
+// shrinking into illegibility: full-size cells, a viewport that tracks the
+// head (see draw()).
 export function fitBoard(r) {
   const c = r.canvas;
   if (!r.w || !r.h) return;
@@ -72,8 +93,23 @@ export function fitBoard(r) {
   const availW = document.documentElement.clientWidth - padX;
   const availH = window.innerHeight - padY;
 
+  const fullScale = Math.min(1, availW / r.w);
+  if (r.cols / Math.max(1, r.rows) >= CAM_ASPECT && fullScale < CAM_MIN_SCALE) {
+    // -2 leaves room for the canvas-wrapper border so nothing overflows.
+    const viewW = Math.min(r.w, Math.floor(availW) - 2);
+    if (r.camera) r.camera.viewW = viewW;
+    else r.camera = { x: null, viewW }; // x: null -> snap to the head next draw
+    setBacking(r, viewW);
+    c.style.width = viewW + 'px';
+    c.style.height = r.h + 'px';
+    return;
+  }
+
+  r.camera = null;
+  setBacking(r, r.w);
+
   // Fit to width first (the usual constraint in portrait), never upscaling.
-  let scale = Math.min(1, availW / r.w);
+  let scale = fullScale;
   c.style.width = Math.floor(r.w * scale) + 'px';
   c.style.height = Math.floor(r.h * scale) + 'px';
 
@@ -153,8 +189,29 @@ export function clearEffects(r) {
 
 // --- drawing ---
 
-function drawLabels(r, monthly) {
+// Month labels scroll with the board under the camera; day labels stay pinned
+// to the left edge (drawn outside the camera transform, over a bg strip so
+// scrolled cells don't slide beneath the text).
+function drawMonthLabels(r, monthly) {
   const { ctx, theme } = r;
+  ctx.font = '10px ' + FONT;
+  ctx.fillStyle = theme.textMuted;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const labels = monthly || MONTH_LABELS;
+  const colsPerLabel = Math.ceil(r.cols / labels.length);
+  for (let m = 0; m < labels.length; m++) {
+    const col = m * colsPerLabel;
+    if (col < r.cols) ctx.fillText(labels[m], OX() + col * STEP_PX, 4);
+  }
+}
+
+function drawDayLabels(r) {
+  const { ctx, theme } = r;
+  if (r.camera) {
+    ctx.fillStyle = theme.bg;
+    ctx.fillRect(0, LABEL_TOP, LABEL_LEFT - 2, r.h - LABEL_TOP);
+  }
   ctx.font = '10px ' + FONT;
   ctx.textBaseline = 'middle';
   ctx.fillStyle = theme.textMuted;
@@ -163,14 +220,6 @@ function drawLabels(r, monthly) {
     if (DAY_LABELS[row]) {
       ctx.fillText(DAY_LABELS[row], OX() - 6, OY() + row * STEP_PX + CELL / 2);
     }
-  }
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  const labels = monthly || MONTH_LABELS;
-  const colsPerLabel = Math.ceil(r.cols / labels.length);
-  for (let m = 0; m < labels.length; m++) {
-    const col = m * colsPerLabel;
-    if (col < r.cols) ctx.fillText(labels[m], OX() + col * STEP_PX, 4);
   }
 }
 
@@ -247,6 +296,39 @@ function drawFood(r, game) {
   ctx.restore();
 }
 
+// Timed bonus food: a gold cell that pulses faster than normal food and
+// blinks through its final steps so the deadline is readable at a glance.
+function drawGolden(r, game) {
+  const g = game.golden;
+  if (!g) return;
+  const { ctx, theme } = r;
+  // Blink over the last 15 steps (skip under reduced motion — steady is kinder).
+  if (!r.reduceMotion && g.ttl <= 15 && g.ttl % 4 < 2) return;
+  const pulseScale = r.reduceMotion ? 1 : 1 + Math.sin(r.foodPulse * 1.8) * 0.2;
+  const { px, py } = cellPx(g.x, g.y);
+  const cx = px + CELL / 2;
+  const cy = py + CELL / 2;
+  ctx.save();
+  ctx.shadowColor = theme.goldGlow;
+  ctx.shadowBlur = r.reduceMotion ? 10 : 12 + Math.sin(r.foodPulse * 1.8) * 5;
+  const size = CELL * pulseScale;
+  ctx.fillStyle = theme.gold;
+  roundedRect(ctx, cx - size / 2, cy - size / 2, size, size, 3);
+  ctx.fill();
+  // A small sparkle so it reads as "bonus" even in a still frame.
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = theme.bg;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 3);
+  ctx.lineTo(cx + 2.2, cy);
+  ctx.lineTo(cx, cy + 3);
+  ctx.lineTo(cx - 2.2, cy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function segmentColor(theme, index, total) {
   if (index === 0) return theme.head;
   const ratio = 1 - index / total;
@@ -289,21 +371,49 @@ function drawSnakeBody(ctx, positions, colorAt) {
   }
 }
 
-// Translucent replay opponent racing on the same board.
+// Rotten-commit hazard (unranked variant): a dark cell with an × through it,
+// blinking through its final steps like the golden commit does.
+function drawRotten(r, game) {
+  const c = game.rotten;
+  if (!c) return;
+  const { ctx, theme } = r;
+  if (!r.reduceMotion && c.ttl <= 15 && c.ttl % 4 < 2) return;
+  const { px, py } = cellPx(c.x, c.y);
+  ctx.save();
+  ctx.fillStyle = theme.deathDark;
+  roundedRect(ctx, px, py, CELL, CELL, 3);
+  ctx.fill();
+  ctx.strokeStyle = theme.death;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(px + 4, py + 4);
+  ctx.lineTo(px + CELL - 4, py + CELL - 4);
+  ctx.moveTo(px + CELL - 4, py + 4);
+  ctx.lineTo(px + 4, py + CELL - 4);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Translucent replay opponent racing on the same board. In a crowd race the
+// caller sets renderAlpha/showName per ghost each frame (nearest rival bright
+// and named, the rest a quiet swarm); single-ghost modes use the defaults.
 function drawGhost(r, ghost) {
   const { ctx, theme } = r;
   const g = ghost.game;
   if (!g.snake.length) return;
   const positions = segmentPositions(g.snake, ghost.prevSnake, ghost.alpha ?? 1);
   ctx.save();
-  ctx.globalAlpha = g.alive && !g.won ? 0.3 : 0.12;
+  ctx.globalAlpha = ghost.renderAlpha ?? (g.alive && !g.won ? 0.3 : 0.12);
   drawSnakeBody(ctx, positions, (i) => segmentColor(theme, i, g.snake.length));
-  ctx.globalAlpha = Math.min(0.7, ctx.globalAlpha * 2.2);
-  ctx.font = '9px ' + FONT;
-  ctx.fillStyle = theme.textMuted;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(ghost.name || 'ghost', positions[0].x + CELL / 2, positions[0].y - 2);
+  if (ghost.showName ?? true) {
+    ctx.globalAlpha = Math.min(0.7, ctx.globalAlpha * 2.2);
+    ctx.font = '9px ' + FONT;
+    ctx.fillStyle = theme.textMuted;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(ghost.name || 'ghost', positions[0].x + CELL / 2, positions[0].y - 2);
+  }
   ctx.restore();
 }
 
@@ -385,14 +495,15 @@ function drawFloatingTexts(r) {
 }
 
 // Draining bar showing how many steps remain to keep the streak alive —
-// makes the combo system legible instead of feeling random.
+// makes the combo system legible instead of feeling random. Anchored to the
+// visible viewport, not the (possibly wider) logical board.
 function drawComboMeter(r, game, alpha) {
   if (!game.alive || game.won || game.streak === 0) return;
   const remaining = 1 - (game.stepsSinceFood + alpha) / STREAK_WINDOW;
   if (remaining <= 0) return;
   const { ctx, theme } = r;
   const w = 70;
-  const x = r.w - w - 10;
+  const x = (r.camera ? r.camera.viewW : r.w) - w - 10;
   const y = 6;
   // Clear the label strip behind the meter so month labels don't collide.
   ctx.fillStyle = theme.bg;
@@ -410,9 +521,22 @@ function drawComboMeter(r, game, alpha) {
   ctx.fill();
 }
 
+// Ease the camera toward the interpolated head; clamp to the board edges.
+// x === null (fresh camera) snaps immediately so runs never open mid-pan.
+function updateCamera(r, game, prevSnake, alpha) {
+  const cam = r.camera;
+  if (!cam || !game.snake.length) return;
+  const to = game.snake[0];
+  const from = prevSnake && prevSnake[0] ? prevSnake[0] : to;
+  const hx = OX() + (from.x + (to.x - from.x) * alpha) * STEP_PX + CELL / 2;
+  const desired = Math.max(0, Math.min(r.w - cam.viewW, hx - cam.viewW / 2));
+  cam.x = cam.x == null ? desired : cam.x + (desired - cam.x) * 0.18;
+}
+
 export function draw(r, game, prevSnake, alpha, opts = {}) {
-  const { monthLabels = null, ghost = null, showCombo = false } = opts;
+  const { monthLabels = null, ghost = null, ghosts = null, showCombo = false } = opts;
   const { ctx, theme } = r;
+  const ghostList = ghosts || (ghost ? [ghost] : []);
   ctx.save();
 
   if (r.shakeTimer > 0) {
@@ -422,17 +546,29 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
   }
   if (r.deathFlashTimer > 0) r.deathFlashTimer--;
 
+  const viewW = r.camera ? r.camera.viewW : r.w;
   ctx.fillStyle = theme.bg;
-  ctx.fillRect(-8, -8, r.w + 16, r.h + 16);
+  ctx.fillRect(-8, -8, viewW + 16, r.h + 16);
 
-  drawLabels(r, monthLabels);
+  updateCamera(r, game, prevSnake, alpha);
+
+  // Board-space layer: pans with the camera.
+  ctx.save();
+  if (r.camera) ctx.translate(-r.camera.x, 0);
+  drawMonthLabels(r, monthLabels);
   drawGrid(r, game);
   drawFood(r, game);
-  if (ghost) drawGhost(r, ghost);
+  drawGolden(r, game);
+  drawRotten(r, game);
+  for (const g of ghostList) drawGhost(r, g);
   drawSnake(r, game, prevSnake, alpha);
-  if (showCombo) drawComboMeter(r, game, alpha);
   drawParticles(r);
   drawFloatingTexts(r);
+  ctx.restore();
+
+  // Pinned layer: fixed to the viewport.
+  drawDayLabels(r);
+  if (showCombo) drawComboMeter(r, game, alpha);
 
   ctx.restore();
 }

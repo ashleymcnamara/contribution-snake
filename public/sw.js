@@ -1,7 +1,7 @@
 // Offline-first service worker. Vite emits hashed asset filenames, so instead
 // of a fixed precache list we cache same-origin GETs as they're fetched.
 // API calls are never cached — the game degrades gracefully without them.
-const CACHE = 'gh-snake-v3';
+const CACHE = 'gh-snake-v4';
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

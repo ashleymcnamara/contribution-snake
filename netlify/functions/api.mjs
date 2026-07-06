@@ -38,7 +38,9 @@ export default async function handler(req, context) {
     }
     if (url.pathname === '/api/session' && req.method === 'POST') {
       const body = await req.json().catch(() => ({}));
-      return json(await logic.createSession(store, body?.mode));
+      return json(await logic.createSession(store, body?.mode, {
+        username: body?.username, clientId: body?.clientId,
+      }));
     }
     if (url.pathname === '/api/scores' && req.method === 'POST') {
       const body = await req.json().catch(() => ({}));
@@ -48,6 +50,7 @@ export default async function handler(req, context) {
       return json(await logic.leaderboard(store, {
         mode: url.searchParams.get('mode'),
         day: url.searchParams.get('day'),
+        user: url.searchParams.get('user'),
       }));
     }
     return json({ status: 404, body: { error: 'Not found.' } });

@@ -12,6 +12,8 @@ export const THEMES = {
     levels: ['#0e4429', '#006d32', '#26a641', '#39d353'],
     food: '#39d353',
     foodGlow: 'rgba(57, 211, 83, 0.35)',
+    gold: '#e3b341',
+    goldGlow: 'rgba(227, 179, 65, 0.45)',
     head: '#39d353',
     eyes: '#0d1117',
     death: '#da3633',
@@ -30,6 +32,8 @@ export const THEMES = {
     levels: ['#9be9a8', '#40c463', '#30a14e', '#216e39'],
     food: '#216e39',
     foodGlow: 'rgba(33, 110, 57, 0.3)',
+    gold: '#bf8700',
+    goldGlow: 'rgba(191, 135, 0, 0.35)',
     head: '#216e39',
     eyes: '#ffffff',
     death: '#cf222e',
@@ -64,9 +68,16 @@ const BLUE = {
 const STORAGE_KEY = 'gh-snake-theme';
 const PALETTE_KEY = 'gh-snake-palette';
 
-export function loadThemeName() {
+// The stored *setting* is 'auto' | 'dark' | 'light'; 'auto' follows the
+// system scheme (and index.html's pre-paint script treats any non-explicit
+// value the same way, so first paint always matches).
+export function loadThemeSetting() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved === 'dark' || saved === 'light') return saved;
+  return saved === 'dark' || saved === 'light' ? saved : 'auto';
+}
+
+export function resolveThemeName(setting) {
+  if (setting === 'dark' || setting === 'light') return setting;
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
@@ -74,8 +85,8 @@ export function loadPalette() {
   return localStorage.getItem(PALETTE_KEY) === 'blue' ? 'blue' : 'green';
 }
 
-export function applyTheme(name, palette = 'green') {
-  const base = THEMES[name] || THEMES.dark;
+export function applyTheme(setting, palette = 'green') {
+  const base = THEMES[resolveThemeName(setting)] || THEMES.dark;
   const t = palette === 'blue' ? { ...base, ...BLUE[base.name] } : base;
   localStorage.setItem(PALETTE_KEY, palette);
   const root = document.documentElement;
@@ -94,6 +105,6 @@ export function applyTheme(name, palette = 'green') {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute('content', t.bg);
-  localStorage.setItem(STORAGE_KEY, t.name);
+  localStorage.setItem(STORAGE_KEY, setting === 'auto' ? 'auto' : t.name);
   return t;
 }

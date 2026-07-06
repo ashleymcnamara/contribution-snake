@@ -19,7 +19,9 @@ const LEVEL_ENUM = {
 };
 
 export function isValidUsername(name) {
-  return USERNAME_RE.test(name);
+  // Explicit string check: RegExp.test coerces undefined to "undefined",
+  // which would pass the pattern.
+  return typeof name === 'string' && USERNAME_RE.test(name);
 }
 
 async function fetchViaGraphQL(username, token) {

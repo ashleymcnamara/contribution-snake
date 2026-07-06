@@ -20,6 +20,11 @@ export const icons = {
     '<path d="M8 1.2v1.8M8 13v1.8M1.2 8H3M13 8h1.8M3.2 3.2l1.3 1.3M11.5 11.5l1.3 1.3M12.8 3.2l-1.3 1.3M4.5 11.5l-1.3 1.3"/>',
     false),
   moon: wrap('<path d="M13.8 9.6A6.3 6.3 0 1 1 6.4 2.2a5.1 5.1 0 0 0 7.4 7.4Z"/>'),
+  // Auto theme: half-filled circle (follows the system scheme).
+  autoTheme: wrap(
+    '<circle cx="8" cy="8" r="5.5"/>' +
+    '<path d="M8 2.5a5.5 5.5 0 0 1 0 11Z" fill="currentColor" stroke="none"/>',
+    false),
   volumeOn: wrap(
     '<path d="M7.5 3.2v9.6L4.6 10H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h1.6l2.9-2.8Z" fill="currentColor" stroke="none"/>' +
     '<path d="M10 5.7a3.2 3.2 0 0 1 0 4.6M12 3.9a5.8 5.8 0 0 1 0 8.2"/>',
@@ -34,6 +39,11 @@ export const icons = {
   palette: wrap(
     '<rect x="2" y="2" width="5" height="5" rx="1.5"/><rect x="9" y="2" width="5" height="5" rx="1.5" opacity="0.7"/>' +
     '<rect x="2" y="9" width="5" height="5" rx="1.5" opacity="0.45"/><rect x="9" y="9" width="5" height="5" rx="1.5" opacity="0.2"/>'),
+  // Race: a checkered-ish flag for "race this run".
+  race: wrap(
+    '<path d="M3.5 14V2.2"/>' +
+    '<path d="M3.5 2.5h9l-1.8 2.9 1.8 2.9h-9Z" fill="currentColor" stroke="none"/>',
+    false),
   up: wrap('<path d="M8 4.2 13 11H3l5-6.8Z"/>'),
   down: wrap('<path d="M8 11.8 3 5h10l-5 6.8Z"/>'),
   left: wrap('<path d="M4.2 8 11 3v10L4.2 8Z"/>'),
@@ -85,4 +95,7 @@ export const achIcons = {
   ruleBender: achWrap('<rect x="2.5" y="2.5" width="11" height="11" rx="2.6"/><g fill="currentColor" stroke="none">' +
     '<circle cx="5.6" cy="5.6" r="1"/><circle cx="10.4" cy="5.6" r="1"/><circle cx="8" cy="8" r="1"/>' +
     '<circle cx="5.6" cy="10.4" r="1"/><circle cx="10.4" cy="10.4" r="1"/></g>'),
+  // Gold Rush — a coin with a sparkle (golden commits).
+  goldRush: achWrap('<circle cx="8" cy="8" r="5.6"/>' +
+    solid('m8 4.6.95 2.05 2.25.25-1.65 1.55.45 2.2L8 9.55l-2 1.1.45-2.2L4.8 6.9l2.25-.25L8 4.6Z')),
 };

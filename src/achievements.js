@@ -14,27 +14,39 @@ const RESET_KEY = 'gh-snake-achievements-reset';
 const RESET_TAG = '2026-07-harder-v1';
 const BUFFED_IDS = ['committed', 'on-fire', 'combo-chain', 'unbroken', 'daily-devotee'];
 
+// `progress` (optional) maps lifetime stats to [current, goal] so the UI can
+// show how close a locked achievement is. Event-based achievements (win a
+// graph, use a variant, eat a golden) have no meaningful progress and omit it.
 export const ACHIEVEMENTS = [
   { id: 'first-bite', icon: achIcons.firstBite, name: 'First Bite',
     desc: 'Play your first game.', test: (c) => c.stats.games >= 1 },
   { id: 'regular', icon: achIcons.regular, name: 'Regular',
-    desc: 'Play 10 games.', test: (c) => c.stats.games >= 10 },
+    desc: 'Play 10 games.', test: (c) => c.stats.games >= 10,
+    progress: (s) => [s.games, 10] },
   { id: 'committed', icon: achIcons.committed, name: 'Committed',
-    desc: 'Play 100 games.', test: (c) => c.stats.games >= 100 },
+    desc: 'Play 100 games.', test: (c) => c.stats.games >= 100,
+    progress: (s) => [s.games, 100] },
   { id: 'century', icon: achIcons.century, name: 'Century',
-    desc: 'Score 100 in a single run.', test: (c) => c.stats.bestScore >= 100 },
+    desc: 'Score 100 in a single run.', test: (c) => c.stats.bestScore >= 100,
+    progress: (s) => [s.bestScore, 100] },
   { id: 'on-fire', icon: achIcons.onFire, name: 'On Fire',
-    desc: 'Score 400 in a single run.', test: (c) => c.stats.bestScore >= 400 },
+    desc: 'Score 400 in a single run.', test: (c) => c.stats.bestScore >= 400,
+    progress: (s) => [s.bestScore, 400] },
   { id: 'combo-chain', icon: achIcons.comboChain, name: 'Combo Chain',
-    desc: 'Reach a 20 streak in one run.', test: (c) => c.stats.bestStreak >= 20 },
+    desc: 'Reach a 20 streak in one run.', test: (c) => c.stats.bestStreak >= 20,
+    progress: (s) => [s.bestStreak, 20] },
   { id: 'unbroken', icon: achIcons.unbroken, name: 'Unbroken',
-    desc: 'Reach a 50 streak in one run.', test: (c) => c.stats.bestStreak >= 50 },
+    desc: 'Reach a 50 streak in one run.', test: (c) => c.stats.bestStreak >= 50,
+    progress: (s) => [s.bestStreak, 50] },
   { id: 'full-year', icon: achIcons.fullYear, name: 'Full Year',
     desc: 'Clear an entire contribution graph.', test: (c) => !!c.run.won && c.run.mode === 'graph' },
   { id: 'daily-devotee', icon: achIcons.dailyDevotee, name: 'Daily Devotee',
-    desc: 'Keep a 14-day daily-challenge streak.', test: (c) => c.stats.dailyStreak >= 14 },
+    desc: 'Keep a 14-day daily-challenge streak.', test: (c) => c.stats.dailyStreak >= 14,
+    progress: (s) => [s.dailyStreak, 14] },
   { id: 'rule-bender', icon: achIcons.ruleBender, name: 'Rule Bender',
     desc: 'Finish a run with a variant turned on.', test: (c) => !!c.run.variant },
+  { id: 'gold-rush', icon: achIcons.goldRush, name: 'Gold Rush',
+    desc: 'Grab a golden commit before it fades.', test: (c) => (c.run.golden || 0) >= 1 },
 ];
 
 export function loadUnlocked() {

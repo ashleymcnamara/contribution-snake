@@ -51,24 +51,53 @@ export function createSqliteStore(dbPath) {
       payload TEXT NOT NULL,
       fetched_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS daily_claims (
+      day TEXT NOT NULL,
+      client_id TEXT NOT NULL,
+      PRIMARY KEY (day, client_id)
+    );
   `);
+
+  // Sessions grew extra fields (rules version, graph grids, client tokens);
+  // they ride in a JSON payload column. ALTER fails if the column already
+  // exists, so the migration is a no-op on upgraded databases.
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN payload TEXT');
+  } catch { /* column already present */ }
 
   return {
     async getSession(id) {
       const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(id);
       if (!row) return null;
+      // Extra fields (rules, graph, clientId, …) live in the JSON payload;
+      // pre-payload rows fall back to the typed columns alone.
+      const extra = row.payload ? JSON.parse(row.payload) : {};
       return {
+        ...extra,
         id: row.id, mode: row.mode, seed: row.seed, day: row.day,
         createdAt: Number(row.created_at), used: !!row.used,
       };
     },
 
-    async createSession({ id, mode, seed, day, createdAt }) {
-      db.prepare('INSERT INTO sessions (id, mode, seed, day, created_at) VALUES (?, ?, ?, ?, ?)')
-        .run(id, mode, seed, day, createdAt);
-      // Opportunistic cleanup of stale sessions.
+    async createSession({ id, mode, seed, day, createdAt, used, ...extra }) {
+      db.prepare('INSERT INTO sessions (id, mode, seed, day, created_at, payload) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(id, mode, seed, day, createdAt, JSON.stringify(extra));
+      // Opportunistic cleanup of stale sessions and old daily claims.
       if (Math.random() < 0.01) {
         db.prepare('DELETE FROM sessions WHERE created_at < ?').run(Date.now() - 24 * 3600 * 1000);
+        db.prepare('DELETE FROM daily_claims WHERE day < ?')
+          .run(new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().slice(0, 10));
+      }
+    },
+
+    // One ranked daily score per client per day — the PK makes it atomic.
+    async claimDailyRank(day, clientId) {
+      try {
+        db.prepare('INSERT INTO daily_claims (day, client_id) VALUES (?, ?)').run(day, clientId);
+        return true;
+      } catch {
+        return false; // already claimed
       }
     },
 

@@ -39,7 +39,9 @@ const wrap = (fn) => async (req, res) => {
 
 app.get('/api/health', wrap(() => logic.health()));
 app.get('/api/contributions/:username', wrap((req) => logic.contributions(store, req.params.username)));
-app.post('/api/session', wrap((req) => logic.createSession(store, req.body?.mode)));
+app.post('/api/session', wrap((req) => logic.createSession(store, req.body?.mode, {
+  username: req.body?.username, clientId: req.body?.clientId,
+})));
 app.post('/api/scores', wrap((req) => logic.submitScore(store, req.body || {})));
 app.get('/api/leaderboard', wrap((req) => logic.leaderboard(store, req.query)));
 app.get('/api/replay/:id', wrap((req) => logic.replay(store, req.params.id)));

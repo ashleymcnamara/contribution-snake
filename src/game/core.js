@@ -26,6 +26,35 @@ const SPEED_LEVELS = 10;
 export const STREAK_WINDOW = 40;
 export const MAX_REPLAY_STEPS = 100000;
 
+// Rules versioning: gameplay changes that alter determinism bump this, and
+// every stored run (server session/replay, local best run) records the rules
+// it was played under so old input logs still replay to the same final state.
+//   v1 — original rules.
+//   v2 — tail forgiveness (the head may enter the cell the tail is vacating
+//        this step) and golden commits (a timed bonus food in classic/daily).
+//   v3 — golden TTL is time-normalized: ~GOLDEN_TIME_MS of wall-clock at the
+//        speed it spawned at, instead of a fixed step count. Fixed steps gave
+//        7.2s of thinking time at level 1 but only 3s at top speed — exactly
+//        backwards for difficulty.
+export const CURRENT_RULES = 3;
+
+// Golden commits (rules >= 2, classic/daily only): every GOLDEN_EVERY-th
+// normal food spawns a bonus cell worth GOLDEN_POINTS base points that
+// disappears after GOLDEN_TTL steps (v2) or ~GOLDEN_TIME_MS of play (v3+).
+export const GOLDEN_EVERY = 5;
+export const GOLDEN_TTL = 60;
+export const GOLDEN_TIME_MS = 4500;
+export const GOLDEN_MIN_TTL = 20;
+export const GOLDEN_POINTS = 50;
+
+// Rotten commits (unranked variant, opt-in): every ROTTEN_EVERY-th eat spawns
+// a timed hazard cell; running into it zeroes the streak and costs points.
+// Kept out of the versioned ranked rules while the mechanic is on trial —
+// variant runs never reach the server, so no rules bump is needed.
+export const ROTTEN_EVERY = 3;
+export const ROTTEN_TTL = 80;
+export const ROTTEN_PENALTY = 25;
+
 /**
  * @typedef {Object} GameState
  * @property {'classic'|'daily'|'graph'} mode
@@ -37,6 +66,12 @@ export const MAX_REPLAY_STEPS = 100000;
  * @property {number[]} queue  Pending validated direction inputs.
  * @property {{s:number,d:number}[]} inputLog  Accepted inputs by step index.
  * @property {{x:number,y:number}|null} food  Classic/daily only.
+ * @property {{x:number,y:number,ttl:number}|null} golden  Timed bonus food (rules >= 2).
+ * @property {number} goldenEaten  Golden commits eaten this run.
+ * @property {boolean} rottenVariant  Hazard variant enabled (unranked).
+ * @property {{x:number,y:number,ttl:number}|null} rotten  Active hazard cell.
+ * @property {number} foodEaten  Foods/cells eaten — paces golden and hazard spawns.
+ * @property {number} rules  Gameplay rules version this game runs under.
  * @property {Map<string,number>|null} cells  Graph mode: "x,y" -> level 1-4.
  * @property {number} totalCells  Graph mode: initial food-cell count.
  * @property {number} score  @property {number} streak  @property {number} bestStreak
@@ -60,7 +95,13 @@ export function boardSize(mode) {
 // graph: for 'graph' mode, a cols x rows array of contribution levels 0-4.
 // wrap / speedFactor are unranked variants — server sessions always replay
 // with the defaults, so variant runs can never reach the leaderboard.
-export function createGame({ mode = 'classic', seed = 1, graph = null, wrap = false, speedFactor = 1 }) {
+// rules: gameplay version (see CURRENT_RULES); pass a stored run's rules when
+// replaying it so old logs reproduce their original outcome.
+// rotten: the unranked hazard variant — see ROTTEN_* above.
+export function createGame({
+  mode = 'classic', seed = 1, graph = null,
+  wrap = false, speedFactor = 1, rotten = false, rules = CURRENT_RULES,
+}) {
   const { cols, rows } = boardSize(mode);
   const startX = Math.floor(cols / 2);
   const startY = Math.floor(rows / 2);
@@ -75,11 +116,17 @@ export function createGame({ mode = 'classic', seed = 1, graph = null, wrap = fa
     rows,
     rng: mulberry32(seed),
     seed,
+    rules,
     snake,
     dir: 1, // right
     queue: [],
     inputLog: [],
     food: null,
+    golden: null, // { x, y, ttl } bonus food (rules >= 2, classic/daily)
+    goldenEaten: 0,
+    rottenVariant: rotten,
+    rotten: null, // { x, y, ttl } hazard cell (rotten variant only)
+    foodEaten: 0,
     cells: null,
     totalCells: 0,
     score: 0,
@@ -117,6 +164,8 @@ export function createGame({ mode = 'classic', seed = 1, graph = null, wrap = fa
 
 function placeFood(state) {
   const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  if (state.golden) occupied.add(`${state.golden.x},${state.golden.y}`);
+  if (state.rotten) occupied.add(`${state.rotten.x},${state.rotten.y}`);
   let pos;
   do {
     pos = {
@@ -125,6 +174,46 @@ function placeFood(state) {
     };
   } while (occupied.has(`${pos.x},${pos.y}`));
   state.food = pos;
+}
+
+// v3+: constant thinking time — the TTL covers ~GOLDEN_TIME_MS at the speed
+// the golden spawned at. v2 keeps the original fixed step count so old
+// replays reproduce exactly.
+function goldenTtlFor(state) {
+  if (state.rules < 3) return GOLDEN_TTL;
+  return Math.max(GOLDEN_MIN_TTL, Math.round(GOLDEN_TIME_MS / state.speed));
+}
+
+function placeGolden(state) {
+  const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  occupied.add(`${state.food.x},${state.food.y}`);
+  if (state.rotten) occupied.add(`${state.rotten.x},${state.rotten.y}`);
+  let pos;
+  do {
+    pos = {
+      x: Math.floor(state.rng() * state.cols),
+      y: Math.floor(state.rng() * state.rows),
+    };
+  } while (occupied.has(`${pos.x},${pos.y}`));
+  state.golden = { ...pos, ttl: goldenTtlFor(state) };
+}
+
+function placeRotten(state) {
+  const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  if (state.food) occupied.add(`${state.food.x},${state.food.y}`);
+  if (state.golden) occupied.add(`${state.golden.x},${state.golden.y}`);
+  // Graph mode: hazards only land on empty (already-eaten or blank) cells.
+  if (state.cells) for (const key of state.cells.keys()) occupied.add(key);
+  // Defensive: a nearly-full board has nowhere safe to put a hazard.
+  if (occupied.size >= state.cols * state.rows - 1) return;
+  let pos;
+  do {
+    pos = {
+      x: Math.floor(state.rng() * state.cols),
+      y: Math.floor(state.rng() * state.rows),
+    };
+  } while (occupied.has(`${pos.x},${pos.y}`));
+  state.rotten = { ...pos, ttl: ROTTEN_TTL };
 }
 
 // Validated direction queue — prevents 180° reversals from fast key presses.
@@ -188,6 +277,11 @@ export function step(state) {
   // Each step takes at least `speed` ms of real time on an honest client.
   state.elapsedGameMs += state.speed;
 
+  // Timed cells tick down first so the eat / tail-forgiveness checks below
+  // all see the same post-expiry board.
+  if (state.golden && --state.golden.ttl <= 0) state.golden = null;
+  if (state.rotten && --state.rotten.ttl <= 0) state.rotten = null;
+
   // Wall collision (or wrap-around in the variant)
   if (head.x < 0 || head.x >= state.cols || head.y < 0 || head.y >= state.rows) {
     if (state.wrap) {
@@ -195,28 +289,43 @@ export function step(state) {
       head.y = (head.y + state.rows) % state.rows;
     } else {
       state.alive = false;
-      return { died: true };
+      return { died: true, cause: 'wall' };
     }
   }
-  // Self collision
-  for (const seg of state.snake) {
+
+  // Will this step eat? Needed before the self-collision check: under v2
+  // rules the head may slide into the cell the tail is vacating, which is
+  // only safe when the snake doesn't grow (i.e. doesn't eat) this step.
+  const headKey = `${head.x},${head.y}`;
+  const willEat = state.mode === 'graph'
+    ? state.cells.has(headKey)
+    : (head.x === state.food.x && head.y === state.food.y)
+      || (state.golden && head.x === state.golden.x && head.y === state.golden.y);
+
+  // Self collision (v2: the vacating tail cell is fair game unless growing)
+  const tailPasses = state.rules >= 2 && !willEat;
+  for (let i = 0; i < state.snake.length; i++) {
+    if (tailPasses && i === state.snake.length - 1) break;
+    const seg = state.snake[i];
     if (seg.x === head.x && seg.y === head.y) {
       state.alive = false;
-      return { died: true };
+      return { died: true, cause: 'self' };
     }
   }
 
   state.snake.unshift(head);
 
   let ate = false;
+  let golden = false;
+  let goldenSpawned = false;
   let eatEvent = null;
   if (state.mode === 'graph') {
-    const key = `${head.x},${head.y}`;
-    const lvl = state.cells.get(key);
+    const lvl = state.cells.get(headKey);
     if (lvl) {
-      state.cells.delete(key);
+      state.cells.delete(headKey);
       eatEvent = onEat(state, GRAPH_LEVEL_POINTS[lvl]);
       ate = true;
+      state.foodEaten++;
       if (state.cells.size === 0) {
         state.won = true;
         return { ate, ...eatEvent, won: true, head };
@@ -225,21 +334,49 @@ export function step(state) {
   } else if (head.x === state.food.x && head.y === state.food.y) {
     eatEvent = onEat(state, 10);
     ate = true;
+    state.foodEaten++;
     placeFood(state);
+    if (state.rules >= 2 && !state.golden && state.foodEaten % GOLDEN_EVERY === 0) {
+      placeGolden(state);
+      goldenSpawned = true;
+    }
+  } else if (state.golden && head.x === state.golden.x && head.y === state.golden.y) {
+    eatEvent = onEat(state, GOLDEN_POINTS);
+    ate = true;
+    golden = true;
+    state.goldenEaten++;
+    state.golden = null;
   }
 
-  if (ate) return { ate, ...eatEvent, head };
+  // Rotten variant: pace a hazard off the same eat counter.
+  if (ate && state.rottenVariant && !state.rotten && state.foodEaten > 0
+      && state.foodEaten % ROTTEN_EVERY === 0) {
+    placeRotten(state);
+  }
+
+  if (ate) return { ate, golden, goldenSpawned, ...eatEvent, head };
+
+  // Hazard hit: not food, so the snake doesn't grow — it just pays for it.
+  let rotten = false;
+  if (state.rotten && head.x === state.rotten.x && head.y === state.rotten.y) {
+    state.rotten = null;
+    state.streak = 0;
+    state.multiplier = 1;
+    state.score = Math.max(0, state.score - ROTTEN_PENALTY);
+    rotten = true;
+  }
 
   state.snake.pop();
   state.stepsSinceFood++;
-  return { head };
+  return { head, rotten };
 }
 
 // Server-side validation: rebuild the game from the seed and the input log,
-// and return the final state. A legitimate submission always ends in death
-// (scores are submitted from the game-over screen).
-export function replayGame({ mode, seed, graph }, inputLog) {
-  const state = createGame({ mode, seed, graph });
+// and return the final state. A legitimate submission ends in death or (graph
+// mode) a win. Pass the rules the run was recorded under so old logs replay
+// to their original outcome.
+export function replayGame({ mode, seed, graph, rules = 1 }, inputLog) {
+  const state = createGame({ mode, seed, graph, rules });
   let i = 0;
   while (state.alive && !state.won && state.stepCount < MAX_REPLAY_STEPS) {
     while (i < inputLog.length && inputLog[i].s === state.stepCount) {

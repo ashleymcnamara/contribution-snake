@@ -64,6 +64,16 @@ describe('achievements', () => {
     expect(evaluate(ctx({}, { variant: true })).map((a) => a.id)).toContain('rule-bender');
   });
 
+  it('exposes progress toward threshold achievements', () => {
+    const regular = ACHIEVEMENTS.find((a) => a.id === 'regular');
+    expect(regular.progress({ ...zeroStats, games: 3 })).toEqual([3, 10]);
+    const unbroken = ACHIEVEMENTS.find((a) => a.id === 'unbroken');
+    expect(unbroken.progress({ ...zeroStats, bestStreak: 12 })).toEqual([12, 50]);
+    // Event-based achievements have no meaningful progress.
+    expect(ACHIEVEMENTS.find((a) => a.id === 'full-year').progress).toBeUndefined();
+    expect(ACHIEVEMENTS.find((a) => a.id === 'gold-rush').progress).toBeUndefined();
+  });
+
   it('accumulates unlocks across runs without dropping earlier ones', () => {
     evaluate(ctx({ games: 1 }));
     evaluate(ctx({ games: 10 }));
