@@ -53,7 +53,7 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
   ctx.font = `bold 44px ${FONT}`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
-  ctx.fillText('Contribution Snake', 64, 52);
+  ctx.fillText('GitSnake', 64, 52);
   ctx.font = `26px ${FONT}`;
   ctx.fillStyle = theme.textMuted;
   ctx.fillText(username ? `${modeLabel} · @${username}` : modeLabel, 66, 112);
@@ -143,7 +143,7 @@ export async function nativeShare({ text, url, canvas }) {
 export function shareText({ game, mode, day, rank, username }) {
   const rankTag = rank ? ` · #${rank}${mode === 'daily' ? ' today' : ''}` : '';
   if (mode === 'daily') {
-    return `Contribution Snake Daily ${day} — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
+    return `GitSnake Daily ${day} — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
   }
   if (mode === 'graph') {
     const pct = game.totalCells
@@ -154,5 +154,5 @@ export function shareText({ game, mode, day, rank, username }) {
       ? `I ate all of ${who} — ${game.score} points. Think you can too?`
       : `I ate ${pct}% of ${who} — ${game.score} points. Think you can beat that?`;
   }
-  return `Contribution Snake — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
+  return `GitSnake — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
 }

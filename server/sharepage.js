@@ -5,7 +5,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => (
 ));
 
 export function renderSharePage({ id, name, score, mode, day, origin }) {
-  const title = `${name} scored ${score} in Contribution Snake`;
+  const title = `${name} scored ${score} in GitSnake`;
   const modeLine = mode === 'daily' ? `Daily challenge, ${day}`
     : mode === 'graph' ? `@${day}'s contribution graph` : 'Classic mode';
   const description = `${modeLine}. Watch the replay and try to beat it.`;

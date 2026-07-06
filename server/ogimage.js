@@ -110,7 +110,7 @@ export function renderOgImage({ final, name, score, mode, day }) {
   const png = new PNG({ width: W, height: H });
   rect(png, 0, 0, W, H, C.bg);
 
-  drawText(png, 'CONTRIBUTION SNAKE', 60, 48, 5, C.text);
+  drawText(png, 'GITSNAKE', 60, 48, 5, C.text);
   const nameEnd = drawText(png, name, 60, 108, 4, C.accent);
   drawText(png, ` - ${score} PTS`, nameEnd, 108, 4, C.text);
   // Graph boards key the day column by username; surface it as @user.
@@ -161,7 +161,7 @@ export function renderHomeOgImage(staged) {
   const png = new PNG({ width: W, height: H });
   rect(png, 0, 0, W, H, C.bg);
 
-  drawText(png, 'CONTRIBUTION SNAKE', 60, 48, 5, C.text);
+  drawText(png, 'GITSNAKE', 60, 48, 5, C.text);
   drawText(png, 'EAT COMMITS. GROW YOUR STREAK.', 60, 112, 3, C.accent);
   drawText(png, 'PLAY YOUR REAL CONTRIBUTION GRAPH. RACE THE DAILY.', 60, 158, 2, C.muted);
 
