@@ -54,7 +54,7 @@ let ghost = null;
 // Spectate mode playback: { inputs, ptr, name, score }
 let spect = null;
 
-const MODE_LABELS = { classic: 'Classic', daily: 'Daily challenge', graph: 'Your graph' };
+const MODE_LABELS = { classic: 'Classic', daily: 'Daily challenge', graph: 'Your graph', rush: 'Rush' };
 
 function highScoreKey() { return `gh-snake-high-${mode}`; }
 function getHighScore() { return parseInt(localStorage.getItem(highScoreKey()) || '0'); }
@@ -95,7 +95,7 @@ function getVariants() {
 
 function variantsActiveFor(m) {
   const v = getVariants();
-  return (v.wrap || v.chill) && m !== 'daily';
+  return (v.wrap || v.chill) && m !== 'daily' && m !== 'rush';
 }
 
 function updateVariantNote() {
@@ -241,7 +241,7 @@ function demoTick(now) {
 
 function bestLocalRun() {
   let best = null;
-  for (const m of ['classic', 'daily', 'graph']) {
+  for (const m of ['classic', 'daily', 'graph', 'rush']) {
     const r = JSON.parse(localStorage.getItem(`gh-snake-bestrun-${m}`) || 'null');
     if (r && (!best || r.score > best.score)) best = r;
   }
@@ -271,9 +271,11 @@ function showStartScreen() {
     $('mode-note').textContent = 'Server offline — classic mode only.';
     $('btn-daily').disabled = true;
     $('btn-graph').disabled = true;
+    $('btn-rush').disabled = true;
   } else {
     $('btn-daily').disabled = false;
     $('btn-graph').disabled = false;
+    $('btn-rush').disabled = false;
   }
   updateDailyNote();
 }
@@ -340,7 +342,7 @@ async function startRun(selectedMode) {
   const useVariants = variants.wrap || variants.chill;
 
   let seed = randomSeed();
-  if (serverOk && !useVariants && (mode === 'classic' || mode === 'daily')) {
+  if (serverOk && !useVariants && (mode === 'classic' || mode === 'daily' || mode === 'rush')) {
     state = 'loading';
     try {
       session = await api.createSession(mode);
@@ -396,7 +398,8 @@ async function startRun(selectedMode) {
   $('board-label').textContent = (
     mode === 'graph' ? `@${graphData.username} · last 12 months`
       : mode === 'daily' ? `Daily challenge · ${session.day}`
-        : 'Snake graph') + variantTag;
+        : mode === 'rush' ? 'Rush · grab the golden'
+          : 'Snake graph') + variantTag;
 
   hideOverlay();
   state = 'resuming';
@@ -419,10 +422,21 @@ async function startRun(selectedMode) {
 
 function handleStepEvents(ev) {
   if (ev.ate) {
-    spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
-    spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
-    audio.playEat(game.streak);
-    haptic(6);
+    if (ev.goldenEaten) {
+      // Rush golden: brighter, bigger, gold-tinted feedback distinct from a
+      // normal commit, and it keeps the combo alive so it feels rewarding.
+      spawnParticles(renderer, ev.head.x, ev.head.y, theme.golden, 16);
+      spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`, true);
+      audio.playGolden();
+      haptic([0, 12, 30, 12]);
+      announce(`Golden bonus +${ev.points}`);
+    } else {
+      spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
+      spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
+      audio.playEat(game.streak);
+      haptic(6);
+    }
+    if (ev.goldenSpawned) announce('Golden bonus appeared — grab it fast.');
     if (ev.levelUp) {
       spawnFloatingText(renderer, ev.head.x, ev.head.y, `LEVEL ${game.level}`, true);
       audio.playLevelUp();
@@ -430,6 +444,10 @@ function handleStepEvents(ev) {
       announce(`Level ${game.level}`);
     }
     updateUI();
+  }
+  if (ev.goldenExpired) {
+    // A missed golden fizzles out with a muted puff (no sound).
+    spawnParticles(renderer, ev.goldenExpired.x, ev.goldenExpired.y, theme.textMuted, 6);
   }
   if (ev.won) {
     audio.playWin();
@@ -570,8 +588,12 @@ function spectateTick(now) {
     }
     const ev = step(game);
     if (ev.ate) {
-      spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
-      spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
+      const gold = ev.goldenEaten;
+      spawnParticles(renderer, ev.head.x, ev.head.y, gold ? theme.golden : theme.food, gold ? 16 : 8);
+      spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`, gold);
+    }
+    if (ev.goldenExpired) {
+      spawnParticles(renderer, ev.goldenExpired.x, ev.goldenExpired.y, theme.textMuted, 6);
     }
     accumulator -= game.speed;
     steps++;
@@ -795,7 +817,7 @@ function escapeHtml(s) {
 }
 
 function setActiveTab(activeId) {
-  for (const id of ['lb-tab-classic', 'lb-tab-daily', 'lb-tab-yesterday']) {
+  for (const id of ['lb-tab-classic', 'lb-tab-daily', 'lb-tab-rush', 'lb-tab-yesterday']) {
     const btn = $(id);
     const on = id === activeId;
     btn.classList.toggle('active', on);
@@ -1027,6 +1049,7 @@ $('pause-btn').addEventListener('click', togglePause);
 $('btn-resume').addEventListener('click', resumeGame);
 $('btn-classic').addEventListener('click', () => { audio.unlock(); startRun('classic'); });
 $('btn-daily').addEventListener('click', () => { audio.unlock(); startRun('daily'); });
+$('btn-rush').addEventListener('click', () => { audio.unlock(); startRun('rush'); });
 $('btn-graph').addEventListener('click', () => {
   $('user-row').hidden = false;
   $('username-input').value = localStorage.getItem('gh-snake-user') || '';
@@ -1047,6 +1070,7 @@ $('submit-row').addEventListener('submit', (e) => { e.preventDefault(); handleSu
 $('btn-leaderboard').addEventListener('click', showLeaderboardScreen);
 $('lb-tab-classic').addEventListener('click', () => { setActiveTab('lb-tab-classic'); renderLeaderboard('classic'); });
 $('lb-tab-daily').addEventListener('click', () => { setActiveTab('lb-tab-daily'); renderLeaderboard('daily'); });
+$('lb-tab-rush').addEventListener('click', () => { setActiveTab('lb-tab-rush'); renderLeaderboard('rush'); });
 $('lb-tab-yesterday').addEventListener('click', () => {
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   setActiveTab('lb-tab-yesterday');

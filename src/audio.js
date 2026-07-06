@@ -79,3 +79,10 @@ export function playWin() {
 export function playClick() {
   blip(700, { type: 'square', dur: 0.03, vol: 0.02 });
 }
+
+// Bright two-note "coin" flourish for the Rush golden pickup — distinct from
+// the streak eat blip and the level-up climb so a golden reads instantly.
+export function playGolden() {
+  blip(988, { type: 'triangle', dur: 0.07, vol: 0.055 });
+  blip(1319, { type: 'triangle', dur: 0.16, vol: 0.055, when: 0.07 });
+}

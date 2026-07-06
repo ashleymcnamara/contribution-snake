@@ -118,6 +118,63 @@ describe('graph mode', () => {
   });
 });
 
+describe('rush mode', () => {
+  it('uses the classic board, starting with a food and no golden', () => {
+    const g = createGame({ mode: 'rush', seed: 1 });
+    expect(g.cols).toBe(36);
+    expect(g.rows).toBe(22);
+    expect(g.food).toBeTruthy();
+    expect(g.golden).toBeNull();
+  });
+
+  it('drops a golden after every 4th normal food', () => {
+    const g = createGame({ mode: 'rush', seed: 1 });
+    for (let i = 0; i < 4; i++) {
+      const h = g.snake[0];
+      g.food = { x: h.x + 1, y: h.y }; // teleport it right in front (dir = right)
+      const ev = step(g);
+      expect(ev.ate).toBe(true);
+      if (i < 3) expect(g.golden).toBeNull();
+    }
+    expect(g.rushFoodCount).toBe(4);
+    expect(g.golden).toBeTruthy();
+  });
+
+  it('scores a golden at 50x the current multiplier and keeps the combo alive', () => {
+    const g = createGame({ mode: 'rush', seed: 1 });
+    g.streak = 6; g.multiplier = 2; g.stepsSinceFood = 0; // mid-combo
+    const h = g.snake[0];
+    g.golden = { x: h.x + 1, y: h.y, spawnedAt: g.stepCount, expiresAt: g.stepCount + 55 };
+    const ev = step(g);
+    expect(ev.goldenEaten).toBe(true);
+    expect(ev.points).toBe(100); // 50 * 2x
+    expect(g.golden).toBeNull();
+    expect(g.streak).toBe(7);    // combo continued, not reset
+  });
+
+  it('expires an uneaten golden once its lifetime elapses', () => {
+    const g = createGame({ mode: 'rush', seed: 1 });
+    const h = g.snake[0];
+    g.food = { x: 0, y: 0 };      // keep the normal food out of the way
+    g.golden = { x: h.x, y: h.y + 3, spawnedAt: g.stepCount, expiresAt: g.stepCount + 1 };
+    const ev = step(g);           // stepCount reaches expiresAt
+    expect(ev.goldenExpired).toEqual({ x: h.x, y: h.y + 3 });
+    expect(g.golden).toBeNull();
+  });
+
+  it('replays a rush run (goldens and all) to an identical final state', () => {
+    for (const seed of [1, 42, 777]) {
+      const live = playBotRun(seed, { mode: 'rush' });
+      expect(live.alive).toBe(false);
+      const replay = replayGame({ mode: 'rush', seed }, live.inputLog);
+      expect(replay.score).toBe(live.score);
+      expect(replay.stepCount).toBe(live.stepCount);
+      expect(replay.snake.length).toBe(live.snake.length);
+      expect(replay.elapsedGameMs).toBe(live.elapsedGameMs);
+    }
+  });
+});
+
 describe('variants', () => {
   it('wrap-around carries the snake across the edge instead of killing it', () => {
     const game = createGame({ mode: 'classic', seed: 1, wrap: true });

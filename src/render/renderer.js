@@ -33,6 +33,7 @@ export function createRenderer(canvas) {
     particles: [],
     floatingTexts: [],
     foodPulse: 0,
+    goldenPulse: 0,
     shakeTimer: 0,
     deathFlashTimer: 0,
     deathSnapshot: null,
@@ -247,6 +248,43 @@ function drawFood(r, game) {
   ctx.restore();
 }
 
+// Rush bonus: a pulsing gold gem wrapped in a life-ring that empties as it
+// nears expiry, so the player can read "grab it soon" at a glance.
+function drawGolden(r, game) {
+  if (!game.golden) return;
+  const { ctx, theme } = r;
+  const gold = theme.golden || '#f2cc60';
+  const glow = theme.goldenGlow || 'rgba(242, 204, 96, 0.45)';
+  r.goldenPulse += 0.14;
+  const { px, py } = cellPx(game.golden.x, game.golden.y);
+  const cx = px + CELL / 2;
+  const cy = py + CELL / 2;
+  const span = Math.max(1, game.golden.expiresAt - game.golden.spawnedAt);
+  const frac = Math.max(0, Math.min(1, (game.golden.expiresAt - game.stepCount) / span));
+
+  ctx.save();
+  const pulse = r.reduceMotion ? 1 : 1 + Math.sin(r.goldenPulse) * 0.18;
+  ctx.shadowColor = glow;
+  ctx.shadowBlur = r.reduceMotion ? 10 : 12 + Math.sin(r.goldenPulse) * 5;
+  const size = CELL * pulse;
+  ctx.fillStyle = gold;
+  roundedRect(ctx, cx - size / 2, cy - size / 2, size, size, 3);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  const ringR = CELL * 0.82;
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = gold;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function segmentColor(theme, index, total) {
   if (index === 0) return theme.head;
   const ratio = 1 - index / total;
@@ -428,6 +466,7 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
   drawLabels(r, monthLabels);
   drawGrid(r, game);
   drawFood(r, game);
+  drawGolden(r, game);
   if (ghost) drawGhost(r, ghost);
   drawSnake(r, game, prevSnake, alpha);
   if (showCombo) drawComboMeter(r, game, alpha);

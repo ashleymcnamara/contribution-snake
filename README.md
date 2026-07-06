@@ -35,6 +35,7 @@ Without configuration the server reads contribution calendars from GitHub's publ
 |------|-------|-------------|
 | **Classic** | Random food, endless, speeds up per level | Global, all-time |
 | **Daily challenge** | Same seeded board for everyone, resets at UTC midnight — race today's #1 as a translucent **ghost** | Per-day |
+| **Rush** | Classic board, but a **golden bonus** drops after every 4th commit and is worth 50× your multiplier — grab it before its life-ring runs out (it vanishes after a few seconds) | Global, all-time (own board) |
 | **Your graph** | A real user's last 12 months, 52×7. Brighter days are worth more, and the pace ramps up as you clear the board. Eat the whole year to win. | — (scores aren't comparable) |
 
 Two unranked variants — **wrap walls** and **chill speed** — can be toggled on the start screen for classic and graph modes. Variant runs never create a server session, so they can't touch the leaderboard by construction.

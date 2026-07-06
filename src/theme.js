@@ -17,6 +17,8 @@ export const THEMES = {
     death: '#da3633',
     deathDark: '#8b2c2a',
     accent: '#39d353',
+    golden: '#f2cc60',
+    goldenGlow: 'rgba(242, 204, 96, 0.45)',
   },
   light: {
     name: 'light',
@@ -35,6 +37,8 @@ export const THEMES = {
     death: '#cf222e',
     deathDark: '#a40e26',
     accent: '#1a7f37',
+    golden: '#bf8700',
+    goldenGlow: 'rgba(191, 135, 0, 0.35)',
   },
 };
 

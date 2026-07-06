@@ -51,6 +51,13 @@ export const MAX_REPLAY_STEPS = 100000;
 // Points for eating a contribution cell of a given intensity in graph mode.
 const GRAPH_LEVEL_POINTS = [0, 5, 10, 15, 20];
 
+// Rush mode: an endless classic board that periodically drops a single golden
+// bonus pickup worth a burst of points. Spawn cadence and cell are drawn from
+// the seeded rng + step count only, so the server can replay a run exactly.
+const RUSH_GOLDEN_EVERY = 4;      // spawn a golden after every Nth normal food
+const RUSH_GOLDEN_POINTS = 50;    // base points, scaled by the current multiplier
+const RUSH_GOLDEN_LIFETIME = 55;  // steps a golden stays before it expires
+
 export function boardSize(mode) {
   return mode === 'graph'
     ? { cols: GRAPH_COLS, rows: GRAPH_ROWS }
@@ -82,6 +89,8 @@ export function createGame({ mode = 'classic', seed = 1, graph = null, wrap = fa
     food: null,
     cells: null,
     totalCells: 0,
+    golden: null,       // rush mode: the active bonus pickup, if any
+    rushFoodCount: 0,   // rush mode: normal foods eaten (drives golden cadence)
     score: 0,
     streak: 0,
     bestStreak: 0,
@@ -117,6 +126,7 @@ export function createGame({ mode = 'classic', seed = 1, graph = null, wrap = fa
 
 function placeFood(state) {
   const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  if (state.golden) occupied.add(`${state.golden.x},${state.golden.y}`);
   let pos;
   do {
     pos = {
@@ -125,6 +135,22 @@ function placeFood(state) {
     };
   } while (occupied.has(`${pos.x},${pos.y}`));
   state.food = pos;
+}
+
+// Rush mode: drop a golden pickup on a free cell (not the snake, not the normal
+// food). Deterministic — consumes the seeded rng in the same order on replay.
+function spawnGolden(state) {
+  const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  if (state.food) occupied.add(`${state.food.x},${state.food.y}`);
+  if (occupied.size >= state.cols * state.rows) return; // board full — skip
+  let pos;
+  do {
+    pos = {
+      x: Math.floor(state.rng() * state.cols),
+      y: Math.floor(state.rng() * state.rows),
+    };
+  } while (occupied.has(`${pos.x},${pos.y}`));
+  state.golden = { x: pos.x, y: pos.y, spawnedAt: state.stepCount, expiresAt: state.stepCount + RUSH_GOLDEN_LIFETIME };
 }
 
 // Validated direction queue — prevents 180° reversals from fast key presses.
@@ -222,17 +248,39 @@ export function step(state) {
         return { ate, ...eatEvent, won: true, head };
       }
     }
+  } else if (state.mode === 'rush' && state.golden &&
+             head.x === state.golden.x && head.y === state.golden.y) {
+    // Rush: grabbing the golden pickup — a big multiplier-scaled bonus that
+    // also keeps the combo alive (onEat treats it like any other pickup).
+    eatEvent = { ...onEat(state, RUSH_GOLDEN_POINTS), goldenEaten: true };
+    state.golden = null;
+    ate = true;
   } else if (head.x === state.food.x && head.y === state.food.y) {
     eatEvent = onEat(state, 10);
     ate = true;
     placeFood(state);
+    if (state.mode === 'rush') {
+      state.rushFoodCount++;
+      if (!state.golden && state.rushFoodCount % RUSH_GOLDEN_EVERY === 0) {
+        spawnGolden(state);
+        if (state.golden) eatEvent = { ...eatEvent, goldenSpawned: true };
+      }
+    }
   }
 
-  if (ate) return { ate, ...eatEvent, head };
+  // Rush: an uneaten golden pickup expires once its lifetime elapses. Checked
+  // after the eat above, so landing on it the same step still counts as a grab.
+  let goldenExpired = null;
+  if (state.mode === 'rush' && state.golden && state.stepCount >= state.golden.expiresAt) {
+    goldenExpired = { x: state.golden.x, y: state.golden.y };
+    state.golden = null;
+  }
+
+  if (ate) return { ate, ...eatEvent, head, ...(goldenExpired && { goldenExpired }) };
 
   state.snake.pop();
   state.stepsSinceFood++;
-  return { head };
+  return { head, ...(goldenExpired && { goldenExpired }) };
 }
 
 // Server-side validation: rebuild the game from the seed and the input log,

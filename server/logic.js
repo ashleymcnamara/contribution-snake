@@ -83,7 +83,7 @@ export async function contributions(store, username) {
 }
 
 export async function createSession(store, mode) {
-  if (mode !== 'classic' && mode !== 'daily') {
+  if (mode !== 'classic' && mode !== 'daily' && mode !== 'rush') {
     return { status: 400, body: { error: 'Unknown mode.' } };
   }
   const day = mode === 'daily' ? todayUTC() : null;
@@ -150,7 +150,7 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
 }
 
 export async function leaderboard(store, { mode: rawMode, day: rawDay }) {
-  const mode = rawMode === 'daily' ? 'daily' : 'classic';
+  const mode = rawMode === 'daily' ? 'daily' : rawMode === 'rush' ? 'rush' : 'classic';
   const day = mode === 'daily' ? (rawDay || todayUTC()) : null;
   if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
     return { status: 400, body: { error: 'Bad day format.' } };
