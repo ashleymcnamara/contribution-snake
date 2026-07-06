@@ -35,8 +35,23 @@ export function getContributions(username) {
   return req(`/api/contributions/${encodeURIComponent(username)}`);
 }
 
-export function createSession(mode) {
-  return req('/api/session', { method: 'POST', body: JSON.stringify({ mode }) });
+// Anonymous, stable per-browser token. Backs the daily challenge's
+// first-score-counts rule; never identifies the player beyond this browser.
+export function clientId() {
+  let id = localStorage.getItem('gh-snake-client');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('gh-snake-client', id);
+  }
+  return id;
+}
+
+// username: graph mode only — the server fetches (and trusts) that grid.
+export function createSession(mode, username) {
+  return req('/api/session', {
+    method: 'POST',
+    body: JSON.stringify({ mode, username, clientId: clientId() }),
+  });
 }
 
 export function submitScore(sessionId, name, inputs) {
@@ -46,9 +61,12 @@ export function submitScore(sessionId, name, inputs) {
   });
 }
 
-export function getLeaderboard(mode, day) {
-  const q = day ? `?mode=${mode}&day=${day}` : `?mode=${mode}`;
-  return req(`/api/leaderboard${q}`);
+// Graph leaderboards are per-username: pass user instead of day.
+export function getLeaderboard(mode, day, user) {
+  const params = new URLSearchParams({ mode });
+  if (day) params.set('day', day);
+  if (user) params.set('user', user);
+  return req(`/api/leaderboard?${params}`);
 }
 
 export function getReplay(id) {

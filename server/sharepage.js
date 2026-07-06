@@ -6,7 +6,8 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => (
 
 export function renderSharePage({ id, name, score, mode, day, origin }) {
   const title = `${name} scored ${score} in Contribution Snake`;
-  const modeLine = mode === 'daily' ? `Daily challenge, ${day}` : 'Classic mode';
+  const modeLine = mode === 'daily' ? `Daily challenge, ${day}`
+    : mode === 'graph' ? `@${day}'s contribution graph` : 'Classic mode';
   const description = `${modeLine}. Watch the replay and try to beat it.`;
   const image = `${origin}/api/og/${id}.png`;
   const watchUrl = `${origin}/?watch=${id}`;

@@ -1,15 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import * as logic from '../server/logic.js';
 import { createMemoryStore } from '../server/stores/memory.js';
+import { CURRENT_RULES } from '../src/game/core.js';
 import { playBotRun } from './helpers.js';
 
 // Insert a session directly so tests can control createdAt (the pacing check
-// compares it against the replay's minimum duration).
-async function seedSession(store, { seed, mode = 'classic', ageMs = 0 }) {
+// compares it against the replay's minimum duration). Sessions default to the
+// current rules to match playBotRun; pass rules: undefined to mimic a legacy
+// pre-versioning session (replayed under v1).
+async function seedSession(store, { seed, mode = 'classic', ageMs = 0, rules = CURRENT_RULES, ...extra }) {
   const id = `session-${Math.random()}`;
   await store.createSession({
     id, mode, seed, day: mode === 'daily' ? logic.todayUTC() : null,
-    createdAt: Date.now() - ageMs, used: false,
+    rules, createdAt: Date.now() - ageMs, used: false, ...extra,
   });
   return id;
 }
@@ -115,6 +118,91 @@ describe('score submission', () => {
 
     expect((await logic.replay(store, '00000000-0000-0000-0000-000000000000')).status).toBe(404);
     expect((await logic.replay(store, '../etc/passwd')).status).toBe(400);
+  });
+});
+
+describe('graph mode sessions', () => {
+  const emptyGrid = () => Array.from({ length: 52 }, () => new Array(7).fill(0));
+
+  it('creates graph sessions from the cached contribution grid', async () => {
+    const store = createMemoryStore();
+    const grid = emptyGrid();
+    grid[0][0] = 2;
+    await store.setContribCache('octocat',
+      { username: 'octocat', grid, months: ['Jan'], total: 1 }, Date.now());
+    const res = await logic.createSession(store, 'graph', { username: 'Octocat' });
+    expect(res.status).toBe(200);
+    expect(res.body.day).toBe('octocat'); // per-user leaderboard key
+    expect(res.body.rules).toBe(CURRENT_RULES);
+  });
+
+  it('rejects graph sessions without a username', async () => {
+    const store = createMemoryStore();
+    expect((await logic.createSession(store, 'graph', {})).status).toBe(400);
+  });
+
+  it('verifies a winning graph run and ranks it on the per-user board', async () => {
+    const store = createMemoryStore();
+    const grid = emptyGrid();
+    grid[27][3] = 4; // directly in front of the starting head (26,3)
+    const sessionId = await seedSession(store, {
+      seed: 9, mode: 'graph', ageMs: 60000, graph: grid, day: 'octocat',
+    });
+
+    // No inputs needed: the snake eats the only cell on step one and wins.
+    const res = await logic.submitScore(store, { sessionId, name: 'grapher', inputs: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.score).toBe(20); // level-4 cell
+    expect(res.body.rank).toBe(1);
+
+    const board = await logic.leaderboard(store, { mode: 'graph', user: 'Octocat' });
+    expect(board.status).toBe(200);
+    expect(board.body.entries).toHaveLength(1);
+    expect(board.body.entries[0].name).toBe('grapher');
+
+    // The stored replay carries the board so spectate/ghosts can rebuild it.
+    const replay = await logic.replay(store, res.body.replayId);
+    expect(replay.body.graph).toEqual(grid);
+    expect(replay.body.rules).toBe(CURRENT_RULES);
+  });
+
+  it('rejects graph leaderboard requests without a valid username', async () => {
+    const store = createMemoryStore();
+    expect((await logic.leaderboard(store, { mode: 'graph' })).status).toBe(400);
+    expect((await logic.leaderboard(store, { mode: 'graph', user: '../nope' })).status).toBe(400);
+  });
+});
+
+describe('one-shot daily', () => {
+  it('ranks only the first daily submission per client', async () => {
+    const store = createMemoryStore();
+    const run = playBotRun(777, { mode: 'daily' });
+    const ageMs = run.elapsedGameMs + 5000;
+    const s1 = await seedSession(store, { seed: 777, mode: 'daily', ageMs, clientId: 'client-a' });
+    const s2 = await seedSession(store, { seed: 777, mode: 'daily', ageMs, clientId: 'client-a' });
+
+    const first = await logic.submitScore(store, { sessionId: s1, name: 'a', inputs: run.inputLog });
+    expect(first.status).toBe(200);
+    const second = await logic.submitScore(store, { sessionId: s2, name: 'a', inputs: run.inputLog });
+    expect(second.status).toBe(409);
+    expect(second.body.error).toMatch(/first daily score/);
+
+    // A different browser (clientId) still ranks normally.
+    const s3 = await seedSession(store, { seed: 777, mode: 'daily', ageMs, clientId: 'client-b' });
+    expect((await logic.submitScore(store, { sessionId: s3, name: 'b', inputs: run.inputLog })).status).toBe(200);
+
+    const board = await logic.leaderboard(store, { mode: 'daily' });
+    expect(board.body.entries).toHaveLength(2);
+  });
+
+  it('leaves legacy sessions without a clientId unrestricted', async () => {
+    const store = createMemoryStore();
+    const run = playBotRun(42, { mode: 'daily' });
+    const ageMs = run.elapsedGameMs + 5000;
+    const s1 = await seedSession(store, { seed: 42, mode: 'daily', ageMs });
+    const s2 = await seedSession(store, { seed: 42, mode: 'daily', ageMs });
+    expect((await logic.submitScore(store, { sessionId: s1, name: 'x', inputs: run.inputLog })).status).toBe(200);
+    expect((await logic.submitScore(store, { sessionId: s2, name: 'x', inputs: run.inputLog })).status).toBe(200);
   });
 });
 

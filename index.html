@@ -117,13 +117,14 @@
         <span class="stat-value" id="streak">0</span>
       </div>
       <div class="stat">
-        <span>Level:</span>
+        <span id="level-label">Level:</span>
         <span class="stat-value" id="level">1</span>
       </div>
       <div class="stat">
         <span>Best:</span>
         <span class="stat-value" id="best">0</span>
       </div>
+      <span class="race-pos" id="race-pos" hidden></span>
       <button class="icon-btn" id="pause-btn" type="button" aria-label="Pause" disabled></button>
     </div>
 
@@ -144,11 +145,16 @@
           <button class="btn btn-secondary" id="btn-daily">Daily challenge</button>
           <div class="mode-note" id="daily-note" hidden></div>
           <button class="btn btn-secondary" id="btn-graph">Play your graph</button>
-          <div class="variant-row">
-            <label class="variant-toggle"><input type="checkbox" id="var-wrap"> Wrap walls</label>
-            <label class="variant-toggle"><input type="checkbox" id="var-chill"> Chill speed</label>
-          </div>
-          <div class="mode-note" id="variant-note" hidden>Variant runs are unranked (classic and graph only).</div>
+          <details class="variant-details" id="variant-details">
+            <summary id="variant-summary">Variants</summary>
+            <div class="variant-row">
+              <label class="variant-toggle"><input type="checkbox" id="var-wrap"> Wrap walls</label>
+              <label class="variant-toggle"><input type="checkbox" id="var-chill"> Chill speed</label>
+              <label class="variant-toggle"><input type="checkbox" id="var-rotten"> Rotten commits</label>
+              <label class="variant-toggle" id="var-race-label"><input type="checkbox" id="var-race"> Race your best</label>
+            </div>
+            <div class="mode-note" id="variant-note" hidden>Variant runs are unranked (classic and graph only).</div>
+          </details>
           <div class="mode-note" id="mode-note" hidden></div>
         </div>
         <form class="input-row" id="user-row" hidden>
@@ -162,6 +168,7 @@
           <button class="linklike" id="btn-watch-best" hidden>Watch your best run</button>
           <button class="linklike" id="btn-stats" hidden>Stats</button>
           <button class="linklike" id="btn-achievements" hidden>Achievements</button>
+          <button class="linklike" id="btn-install" hidden>Install app</button>
         </div>
 
         <!-- Stats panel -->
@@ -200,6 +207,7 @@
           <button class="btn btn-secondary" id="lb-tab-classic">Classic</button>
           <button class="btn btn-secondary" id="lb-tab-daily">Daily</button>
           <button class="btn btn-secondary" id="lb-tab-yesterday">Yesterday's Daily</button>
+          <button class="btn btn-secondary" id="lb-tab-graph" hidden>Graph</button>
           <button class="btn btn-secondary" id="lb-back">Back</button>
         </div>
         <div class="leaderboard" id="leaderboard" hidden></div>
@@ -210,7 +218,12 @@
     </div>
 
     <div class="spectate-cta" id="spectate-cta" hidden>
-      <button class="btn" id="btn-play-own" type="button">Play your own</button>
+      <div class="spect-bar" id="spect-bar" aria-hidden="true" title="Click to seek"><div class="spect-bar-fill" id="spect-fill"></div></div>
+      <div class="spect-actions">
+        <button class="btn btn-secondary" id="btn-spect-speed" type="button"
+                aria-label="Playback speed">1×</button>
+        <button class="btn" id="btn-play-own" type="button">Play your own</button>
+      </div>
     </div>
 
     <div class="sr-only" id="a11y-status" role="status" aria-live="polite"></div>
@@ -228,7 +241,7 @@
     </div>
 
     <div class="controls-hint">
-      <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move · <kbd>Space</kbd> to pause
+      <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move · <kbd>Space</kbd> to pause · <kbd>R</kbd> to retry
     </div>
 
     <div class="touch-controls" id="touch-controls" hidden>

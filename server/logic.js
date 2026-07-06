@@ -2,7 +2,7 @@
 // interface in stores/ (sqlite locally, Netlify Blobs in production, memory
 // in tests) and returns { status, body } for the adapter to serialize.
 import { createHash, randomUUID, randomInt } from 'node:crypto';
-import { replayGame, validateInputLog } from '../src/game/core.js';
+import { replayGame, validateInputLog, CURRENT_RULES } from '../src/game/core.js';
 import { fetchContributionDays, toGrid, isValidUsername } from './github.js';
 import { renderOgImage } from './ogimage.js';
 import { renderSharePage } from './sharepage.js';
@@ -61,38 +61,78 @@ export function health() {
   return { status: 200, body: { ok: true, day: todayUTC() } };
 }
 
+async function fetchContribPayload(store, username) {
+  const key = username.toLowerCase();
+  const cached = await store.getContribCache(key);
+  if (cached && Date.now() - cached.fetchedAt < CONTRIB_TTL_MS) {
+    return cached.payload;
+  }
+  const raw = await fetchContributionDays(username, process.env.GITHUB_TOKEN);
+  const { grid, months } = toGrid(raw.days);
+  const payload = { username, grid, months, total: raw.total, source: raw.source };
+  await store.setContribCache(key, payload, Date.now());
+  return payload;
+}
+
 export async function contributions(store, username) {
   if (!isValidUsername(username)) {
     return { status: 400, body: { error: 'That does not look like a GitHub username.' } };
   }
-  const key = username.toLowerCase();
-  const cached = await store.getContribCache(key);
-  if (cached && Date.now() - cached.fetchedAt < CONTRIB_TTL_MS) {
-    return { status: 200, body: cached.payload };
-  }
   try {
-    const raw = await fetchContributionDays(username, process.env.GITHUB_TOKEN);
-    const { grid, months } = toGrid(raw.days);
-    const payload = { username, grid, months, total: raw.total, source: raw.source };
-    await store.setContribCache(key, payload, Date.now());
-    return { status: 200, body: payload };
+    return { status: 200, body: await fetchContribPayload(store, username) };
   } catch (err) {
     const notFound = /not found/i.test(err.message);
     return { status: notFound ? 404 : 502, body: { error: err.message } };
   }
 }
 
-export async function createSession(store, mode) {
-  if (mode !== 'classic' && mode !== 'daily') {
+// clientId: an anonymous per-browser token; for daily sessions it enforces
+// "only your first submitted score counts today". username: graph mode only —
+// the server fetches that user's grid itself, so the replayed board is trusted.
+export async function createSession(store, mode, { username, clientId } = {}) {
+  if (mode !== 'classic' && mode !== 'daily' && mode !== 'graph') {
     return { status: 400, body: { error: 'Unknown mode.' } };
   }
-  const day = mode === 'daily' ? todayUTC() : null;
-  const seed = mode === 'daily'
-    ? dailySeed(day, await store.getDailySecret())
-    : randomInt(0, 0x7fffffff);
-  const id = randomUUID();
-  await store.createSession({ id, mode, seed, day, createdAt: Date.now(), used: false });
-  return { status: 200, body: { sessionId: id, seed, day } };
+  const session = {
+    id: randomUUID(),
+    mode,
+    day: null,
+    rules: CURRENT_RULES,
+    createdAt: Date.now(),
+    used: false,
+  };
+  if (mode === 'daily') {
+    session.day = todayUTC();
+    session.seed = dailySeed(session.day, await store.getDailySecret());
+    if (typeof clientId === 'string' && /^[0-9a-f-]{8,40}$/i.test(clientId)) {
+      session.clientId = clientId;
+    }
+  } else {
+    session.seed = randomInt(0, 0x7fffffff);
+  }
+  if (mode === 'graph') {
+    if (!isValidUsername(username)) {
+      return { status: 400, body: { error: 'Graph sessions need a GitHub username.' } };
+    }
+    let payload;
+    try {
+      payload = await fetchContribPayload(store, username);
+    } catch (err) {
+      return { status: 502, body: { error: err.message } };
+    }
+    if (!payload.grid.flat().some((l) => l > 0)) {
+      return { status: 422, body: { error: 'That graph has nothing to eat.' } };
+    }
+    // Graph leaderboards are per-username: reuse the day column as the key.
+    session.day = username.toLowerCase();
+    session.graph = payload.grid;
+    session.months = payload.months;
+  }
+  await store.createSession(session);
+  return {
+    status: 200,
+    body: { sessionId: session.id, seed: session.seed, day: session.day, rules: session.rules },
+  };
 }
 
 export async function submitScore(store, { sessionId, name, inputs }, now = Date.now()) {
@@ -106,9 +146,13 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
   }
 
   // Replay the input log through the shared deterministic core; the score we
-  // store is the one *we* computed, not the one the client claims.
-  const final = replayGame({ mode: session.mode, seed: Number(session.seed) }, inputs);
-  if (final.alive) {
+  // store is the one *we* computed, not the one the client claims. Old
+  // sessions carry no rules and replay under v1.
+  const rules = Number(session.rules) || 1;
+  const final = replayGame({
+    mode: session.mode, seed: Number(session.seed), graph: session.graph || null, rules,
+  }, inputs);
+  if (final.alive && !final.won) {
     return { status: 422, body: { error: 'Replay did not end — invalid run.' } };
   }
 
@@ -125,12 +169,27 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
     return { status: 409, body: { error: 'Score already submitted for this game.' } };
   }
 
+  // Daily is one-shot per browser: the first submitted score is the one that
+  // counts. Later sessions from the same client are still playable, but their
+  // scores don't rank. (Anonymous token — determined cheaters can clear it;
+  // this keeps the day honest for everyone playing normally.)
+  if (session.mode === 'daily' && session.clientId) {
+    if (!(await store.claimDailyRank(session.day, session.clientId))) {
+      return {
+        status: 409,
+        body: { error: 'Only your first daily score counts — this run stays practice.' },
+      };
+    }
+  }
+
   const cleanName = sanitizeName(name);
   const id = await freshReplayId(store);
   await store.putReplay(id, {
     seed: Number(session.seed),
     mode: session.mode,
     day: session.day,
+    rules,
+    ...(session.graph ? { graph: session.graph, months: session.months || null } : {}),
     inputs,
     name: cleanName,
     score: final.score,
@@ -149,11 +208,20 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
   return { status: 200, body: { score: final.score, bestStreak: final.bestStreak, rank, replayId: id } };
 }
 
-export async function leaderboard(store, { mode: rawMode, day: rawDay }) {
-  const mode = rawMode === 'daily' ? 'daily' : 'classic';
-  const day = mode === 'daily' ? (rawDay || todayUTC()) : null;
-  if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
-    return { status: 400, body: { error: 'Bad day format.' } };
+export async function leaderboard(store, { mode: rawMode, day: rawDay, user: rawUser }) {
+  const mode = rawMode === 'daily' ? 'daily' : rawMode === 'graph' ? 'graph' : 'classic';
+  let day = null;
+  if (mode === 'daily') {
+    day = rawDay || todayUTC();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      return { status: 400, body: { error: 'Bad day format.' } };
+    }
+  } else if (mode === 'graph') {
+    // Graph boards are per-username (stored in the day column).
+    if (!isValidUsername(rawUser)) {
+      return { status: 400, body: { error: 'Graph leaderboards need a username.' } };
+    }
+    day = rawUser.toLowerCase();
   }
   const entries = await store.getLeaderboard(mode, day, 20);
   return { status: 200, body: { mode, day, entries } };
@@ -174,7 +242,9 @@ export async function ogImage(store, rawId) {
   const res = await replay(store, id);
   if (res.status !== 200) return res;
   const data = res.body;
-  const final = replayGame({ mode: data.mode, seed: data.seed }, data.inputs);
+  const final = replayGame({
+    mode: data.mode, seed: data.seed, graph: data.graph || null, rules: Number(data.rules) || 1,
+  }, data.inputs);
   const buffer = renderOgImage({
     final, name: data.name, score: data.score, mode: data.mode, day: data.day,
   });

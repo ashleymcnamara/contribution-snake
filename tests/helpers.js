@@ -2,9 +2,9 @@ import { createGame, queueInput, step } from '../src/game/core.js';
 
 // Play a seeded game with a greedy bot that chases the food. Returns the
 // finished (dead) game state, including its input log — a realistic stand-in
-// for a human run in tests.
-export function playBotRun(seed, { mode = 'classic', maxSteps = 5000 } = {}) {
-  const game = createGame({ mode, seed });
+// for a human run in tests. Runs under the current rules unless told otherwise.
+export function playBotRun(seed, { mode = 'classic', maxSteps = 5000, rules } = {}) {
+  const game = createGame({ mode, seed, ...(rules ? { rules } : {}) });
   while (game.alive && game.stepCount < maxSteps) {
     const h = game.snake[0];
     const f = game.food;
