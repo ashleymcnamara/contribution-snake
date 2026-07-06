@@ -4,7 +4,7 @@ import { botSteer } from './game/bot.js';
 import { randomSeed } from './game/rng.js';
 import {
   createRenderer, resizeBoard, fitBoard, draw, spawnParticles, spawnFloatingText,
-  startDeathEffect, clearEffects, effectsActive,
+  startDeathEffect, startNomFace, clearEffects, effectsActive,
 } from './render/renderer.js';
 import { loadThemeSetting, loadPalette, applyTheme } from './theme.js';
 import * as audio from './audio.js';
@@ -552,11 +552,13 @@ function handleStepEvents(ev) {
   if (ev.ate) {
     if (ev.golden) {
       spawnParticles(renderer, ev.head.x, ev.head.y, theme.gold, 14);
+      startNomFace(renderer);
       spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`, true);
       audio.playGolden();
       haptic([0, 12, 30, 12]);
     } else {
       spawnParticles(renderer, ev.head.x, ev.head.y, theme.food, 8);
+      startNomFace(renderer);
       spawnFloatingText(renderer, ev.head.x, ev.head.y, `+${ev.points}`);
       audio.playEat(game.streak);
       haptic(6);
