@@ -9,6 +9,29 @@ const LABEL_LEFT = 32;
 const LABEL_TOP = 18;
 const PAD = 4;
 
+// --- "little guy" face geometry (all sized relative to the CELL) ---
+const EYE = 6;            // sclera size (rounded square), kept inside the cell
+const EYE_RX = 2.5;
+const PUPIL = 3;
+const GLINT = 1;
+const PUPIL_TRACK = 1.3;  // max pupil offset toward food (< (EYE-PUPIL)/2 so it stays inside)
+const EYE_LEAD = 1;       // inset from the leading edge
+const EYE_GAP = 1;        // gap between the two eyes
+const EYE_MARG = (CELL - 2 * EYE - EYE_GAP) / 2; // outer margin on the perpendicular axis
+const BLUSH_W = 5;
+const BLUSH_H = 4;
+const TONGUE_STEM = 3.5;
+const TONGUE_PRONG = 3;
+const TONGUE_SPREAD = 2;
+// Timing (ms) driven by the renderer's own frame clock — never game state.
+const BLINK_MS = 120;
+const BLINK_MIN = 3500;
+const BLINK_VAR = 1500;
+const TONGUE_MS = 300;
+const TONGUE_INT = 7000;
+const TONGUE_VAR = 800;
+const NOM_FRAMES = 10;
+
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 const DAY_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', ''];
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -39,6 +62,13 @@ export function createRenderer(canvas) {
     shakeTimer: 0,
     deathFlashTimer: 0,
     deathSnapshot: null,
+    // face state: a renderer-local clock (ms, advanced per draw) drives the
+    // blink and tongue-flick timing so they never depend on game state.
+    faceClock: 0,
+    faceTs: 0,
+    nextBlink: BLINK_MIN,
+    nextTongue: 4500,
+    nomTimer: 0,
   };
 
   const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -179,12 +209,19 @@ export function startDeathEffect(r, snake) {
   if (!r.reduceMotion) r.shakeTimer = 14;
 }
 
+// Happy squint: the head pulls a brief "^^ + blush" face right after eating.
+// Frame-counted (like the death flash) so it reads the same at any speed.
+export function startNomFace(r) {
+  r.nomTimer = NOM_FRAMES;
+}
+
 export function clearEffects(r) {
   r.particles = [];
   r.floatingTexts = [];
   r.deathFlashTimer = 0;
   r.deathSnapshot = null;
   r.shakeTimer = 0;
+  r.nomTimer = 0;
 }
 
 // --- drawing ---
@@ -417,6 +454,199 @@ function drawGhost(r, ghost) {
   ctx.restore();
 }
 
+// --- "little guy" face (live player's snake only; ghosts stay faceless) ---
+
+// The two eye boxes plus the travel-axis unit vectors, for a given head cell
+// (board-space top-left px) and direction. Eyes sit near the leading edge,
+// stacked perpendicular to travel, and always stay inside the head cell.
+function eyeGeom(dir, head) {
+  const near = CELL - EYE_LEAD - EYE; // leading-side coordinate
+  const far = EYE_LEAD;
+  const p1 = EYE_MARG;
+  const p2 = EYE_MARG + EYE + EYE_GAP;
+  let boxes, out, lat;
+  if (dir === 1) {          // right
+    boxes = [[near, p1], [near, p2]]; out = [1, 0]; lat = [0, 1];
+  } else if (dir === 3) {   // left
+    boxes = [[far, p1], [far, p2]];   out = [-1, 0]; lat = [0, 1];
+  } else if (dir === 0) {   // up
+    boxes = [[p1, far], [p2, far]];   out = [0, -1]; lat = [1, 0];
+  } else {                  // down
+    boxes = [[p1, near], [p2, near]]; out = [0, 1]; lat = [1, 0];
+  }
+  return {
+    boxes: boxes.map(([x, y]) => ({ x: head.x + x, y: head.y + y })),
+    out: { x: out[0], y: out[1] },
+    lat: { x: lat[0], y: lat[1] },
+  };
+}
+
+function cellCenterPx(cell) {
+  const { px, py } = cellPx(cell.x, cell.y);
+  return { x: px + CELL / 2, y: py + CELL / 2 };
+}
+
+// Pupils drift toward the current food (or golden, if it's the nearer target),
+// clamped so they never leave the sclera. Centered when there's no target.
+function pupilOffset(game, head) {
+  let target = game.food || null;
+  if (game.golden) {
+    if (!target) target = game.golden;
+    else {
+      const hc = { x: head.x + CELL / 2, y: head.y + CELL / 2 };
+      const df = distSq(hc, cellCenterPx(game.food));
+      const dg = distSq(hc, cellCenterPx(game.golden));
+      if (dg < df) target = game.golden;
+    }
+  }
+  if (!target) return { x: 0, y: 0 };
+  const hcx = head.x + CELL / 2;
+  const hcy = head.y + CELL / 2;
+  const tc = cellCenterPx(target);
+  const dx = tc.x - hcx;
+  const dy = tc.y - hcy;
+  const len = Math.hypot(dx, dy) || 1;
+  return { x: (dx / len) * PUPIL_TRACK, y: (dy / len) * PUPIL_TRACK };
+}
+
+function distSq(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+// True while a blink is showing; reschedules the next blink off the frame clock.
+function faceBlinking(r) {
+  if (r.reduceMotion) return false;
+  if (r.faceClock < r.nextBlink) return false;
+  if (r.faceClock >= r.nextBlink + BLINK_MS) {
+    r.nextBlink = r.faceClock + BLINK_MIN + Math.random() * BLINK_VAR;
+    return false;
+  }
+  return true;
+}
+
+function drawBeanEyes(r, geom, game, head) {
+  const { ctx, theme } = r;
+  const off = pupilOffset(game, head);
+  for (const b of geom.boxes) {
+    ctx.fillStyle = theme.eyeWhite;
+    roundedRect(ctx, b.x, b.y, EYE, EYE, EYE_RX);
+    ctx.fill();
+    const cx = b.x + EYE / 2 + off.x;
+    const cy = b.y + EYE / 2 + off.y;
+    ctx.fillStyle = theme.eyes;
+    roundedRect(ctx, cx - PUPIL / 2, cy - PUPIL / 2, PUPIL, PUPIL, 1);
+    ctx.fill();
+    ctx.fillStyle = theme.eyeWhite;
+    ctx.fillRect(cx - PUPIL / 2 + 0.4, cy - PUPIL / 2 + 0.4, GLINT, GLINT);
+  }
+}
+
+function drawBlink(r, geom) {
+  const { ctx, theme } = r;
+  ctx.fillStyle = theme.eyes;
+  for (const b of geom.boxes) ctx.fillRect(b.x, b.y + EYE / 2 - 1, EYE, 2);
+}
+
+function drawNomFace(r, geom) {
+  const { ctx, theme } = r;
+  // Blush on the cheeks, just behind the eyes (toward the body).
+  ctx.save();
+  ctx.globalAlpha = 0.7;
+  ctx.fillStyle = theme.blush;
+  for (const b of geom.boxes) {
+    const cx = b.x + EYE / 2 - geom.out.x * (EYE / 2 + 3);
+    const cy = b.y + EYE / 2 - geom.out.y * (EYE / 2 + 3);
+    roundedRect(ctx, cx - BLUSH_W / 2, cy - BLUSH_H / 2, BLUSH_W, BLUSH_H, 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  // Upward "^^" arcs for a happy squint.
+  ctx.save();
+  ctx.strokeStyle = theme.eyes;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const b of geom.boxes) {
+    const cx = b.x + EYE / 2;
+    const cy = b.y + EYE / 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x + 0.5, cy + 1.5);
+    ctx.quadraticCurveTo(cx, cy - 2.5, b.x + EYE - 0.5, cy + 1.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Two dark X's where the bean eyes would be — drawn on the death flash.
+function drawXEyes(r, geom) {
+  const { ctx, theme } = r;
+  ctx.save();
+  ctx.strokeStyle = theme.eyes;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  for (const b of geom.boxes) {
+    ctx.beginPath();
+    ctx.moveTo(b.x + 0.5, b.y + 0.5);
+    ctx.lineTo(b.x + EYE - 0.5, b.y + EYE - 0.5);
+    ctx.moveTo(b.x + EYE - 0.5, b.y + 0.5);
+    ctx.lineTo(b.x + 0.5, b.y + EYE - 0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// A forked tongue (matching the header-logo glyph) flicks out of the leading
+// edge every ~7s, poking out and retracting over ~300ms. Frame-clock timed.
+function drawTongue(r, head, geom) {
+  if (r.reduceMotion) return;
+  if (r.faceClock < r.nextTongue) return;
+  const t = (r.faceClock - r.nextTongue) / TONGUE_MS;
+  if (t >= 1) {
+    r.nextTongue = r.faceClock + TONGUE_INT + (Math.random() * 2 - 1) * TONGUE_VAR;
+    return;
+  }
+  const ext = Math.sin(Math.PI * t); // out then back in
+  const { ctx, theme } = r;
+  const { out, lat } = geom;
+  const mx = head.x + CELL / 2 + out.x * (CELL / 2);
+  const my = head.y + CELL / 2 + out.y * (CELL / 2);
+  const ex = mx + out.x * TONGUE_STEM * ext;
+  const ey = my + out.y * TONGUE_STEM * ext;
+  const px = out.x * TONGUE_PRONG * ext;
+  const py = out.y * TONGUE_PRONG * ext;
+  const lx = lat.x * TONGUE_SPREAD * ext;
+  const ly = lat.y * TONGUE_SPREAD * ext;
+  ctx.save();
+  ctx.strokeStyle = theme.tongue;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(mx, my);
+  ctx.lineTo(ex, ey);
+  ctx.lineTo(ex + px + lx, ey + py + ly);
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex + px - lx, ey + py - ly);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawFace(r, game, head, dir) {
+  const geom = eyeGeom(dir, head);
+  const blinking = faceBlinking(r); // evaluated every frame to keep the schedule moving
+  if (r.nomTimer > 0) {
+    drawNomFace(r, geom);
+  } else if (blinking) {
+    drawBlink(r, geom);
+  } else {
+    drawBeanEyes(r, geom, game, head);
+  }
+  // Tongue is independent of the eyes, but yields to the eating squint.
+  if (r.nomTimer === 0) drawTongue(r, head, geom);
+}
+
 function drawSnake(r, game, prevSnake, alpha) {
   const { ctx, theme } = r;
   const isDying = r.deathFlashTimer > 0;
@@ -435,28 +665,10 @@ function drawSnake(r, game, prevSnake, alpha) {
 
   drawSnakeBody(ctx, positions, colorAt);
 
-  // Eyes on the head
-  if (!isDying && positions.length) {
-    const head = positions[0];
-    const dir = game.dir;
-    ctx.fillStyle = theme.eyes;
-    const es = 3; // eye size
-    const eo = 3; // offset from leading edge
-    const hx = head.x;
-    const hy = head.y;
-    if (dir === 1) { // right
-      ctx.fillRect(hx + CELL - eo - es, hy + 2, es, es);
-      ctx.fillRect(hx + CELL - eo - es, hy + CELL - 2 - es, es, es);
-    } else if (dir === 3) { // left
-      ctx.fillRect(hx + eo, hy + 2, es, es);
-      ctx.fillRect(hx + eo, hy + CELL - 2 - es, es, es);
-    } else if (dir === 0) { // up
-      ctx.fillRect(hx + 2, hy + eo, es, es);
-      ctx.fillRect(hx + CELL - 2 - es, hy + eo, es, es);
-    } else { // down
-      ctx.fillRect(hx + 2, hy + CELL - eo - es, es, es);
-      ctx.fillRect(hx + CELL - 2 - es, hy + CELL - eo - es, es, es);
-    }
+  // Face on the head — X-eyes through the death flash, the full face otherwise.
+  if (positions.length) {
+    if (isDying) drawXEyes(r, eyeGeom(game.dir, positions[0]));
+    else drawFace(r, game, positions[0], game.dir);
   }
 }
 
@@ -539,6 +751,13 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
   const ghostList = ghosts || (ghost ? [ghost] : []);
   ctx.save();
 
+  // Renderer-local frame clock (ms) for blink/tongue timing. Clamped so a
+  // backgrounded tab resuming doesn't fire a burst of face events.
+  const nowTs = performance.now();
+  if (!r.faceTs) r.faceTs = nowTs;
+  r.faceClock += Math.min(100, nowTs - r.faceTs);
+  r.faceTs = nowTs;
+
   if (r.shakeTimer > 0) {
     r.shakeTimer--;
     const mag = Math.min(4, r.shakeTimer * 0.5);
@@ -562,6 +781,7 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
   drawRotten(r, game);
   for (const g of ghostList) drawGhost(r, g);
   drawSnake(r, game, prevSnake, alpha);
+  if (r.nomTimer > 0) r.nomTimer--; // drain the eating-squint timer once per frame
   drawParticles(r);
   drawFloatingTexts(r);
   ctx.restore();
