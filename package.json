@@ -26,5 +26,11 @@
     "concurrently": "^9.1.2",
     "vite": "^6.3.5",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "@opentelemetry/core": "2.8.0",
+    "@opentelemetry/resources": "2.8.0",
+    "@opentelemetry/sdk-trace-base": "2.8.0",
+    "@opentelemetry/sdk-trace-node": "2.8.0"
   }
 }
