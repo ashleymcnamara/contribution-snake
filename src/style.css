@@ -374,6 +374,10 @@ canvas {
   color: var(--text-muted);
 }
 
+/* Touch equivalent of .controls-hint — hidden on pointer devices, shown in its
+   place on touch (where the keyboard hint is hidden). */
+.touch-hint { display: none; }
+
 /* Fixed to the viewport (not absolute within .canvas-wrapper) so the start /
    pause / game-over menu always fills the screen and is never clipped by a
    short board — e.g. the wide, 7-row "Play your graph" board, whose wrapper
@@ -950,6 +954,7 @@ canvas {
 @media (pointer: coarse) {
   .touch-controls { display: grid; }
   .controls-hint { display: none; }
+  .controls-hint.touch-hint { display: block; }
   /* Bigger, easier-to-hit header buttons on touch devices (30px is too small
      a tap target — missed taps feel unresponsive). */
   .icon-btn { width: 40px; height: 40px; font-size: 16px; }
