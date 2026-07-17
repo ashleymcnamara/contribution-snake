@@ -49,12 +49,14 @@ export function createRenderer(canvas) {
     // phones): null when the whole board fits, else { x, viewW }.
     camera: null,
     theme: null,
+    cosmetics: null,
     reduceMotion: false,
     // cached offscreen render of the static empty grid (see drawGrid)
     gridCanvas: null,
     gridTheme: null,
     gridCols: 0,
     gridRows: 0,
+    gridCosmeticKey: '',
     // effects state
     particles: [],
     floatingTexts: [],
@@ -302,13 +304,16 @@ function buildGridCache(r) {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, r.w, r.h);
   const { theme } = r;
+  const board = r.cosmetics?.board?.colors;
+  const empty = board?.empty || theme.empty;
+  const border = board?.border || theme.emptyBorder;
   for (let x = 0; x < r.cols; x++) {
     for (let y = 0; y < r.rows; y++) {
       const { px, py } = cellPx(x, y);
-      g.fillStyle = theme.empty;
+      g.fillStyle = empty;
       roundedRect(g, px, py, CELL, CELL, 2);
       g.fill();
-      g.strokeStyle = theme.emptyBorder;
+      g.strokeStyle = border;
       g.lineWidth = 0.5;
       roundedRect(g, px, py, CELL, CELL, 2);
       g.stroke();
@@ -317,12 +322,38 @@ function buildGridCache(r) {
   r.gridTheme = theme;
   r.gridCols = r.cols;
   r.gridRows = r.rows;
+  r.gridCosmeticKey = r.cosmetics?.board?.id || '';
 }
 
 function ensureGridCache(r) {
   if (r.gridCanvas && r.gridTheme === r.theme &&
-      r.gridCols === r.cols && r.gridRows === r.rows) return;
+      r.gridCols === r.cols && r.gridRows === r.rows &&
+      r.gridCosmeticKey === (r.cosmetics?.board?.id || '')) return;
   buildGridCache(r);
+}
+
+function drawWalls(r, game) {
+  if (!game.walls?.size) return;
+  const { ctx, theme } = r;
+  for (const key of game.walls) {
+    const comma = key.indexOf(',');
+    const x = +key.slice(0, comma);
+    const y = +key.slice(comma + 1);
+    const { px, py } = cellPx(x, y);
+    ctx.fillStyle = theme.borderSubtle;
+    roundedRect(ctx, px, py, CELL, CELL, 3);
+    ctx.fill();
+    ctx.strokeStyle = theme.textMuted;
+    ctx.globalAlpha = 0.55;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px + 4, py + 4);
+    ctx.lineTo(px + CELL - 4, py + CELL - 4);
+    ctx.moveTo(px + CELL - 4, py + 4);
+    ctx.lineTo(px + 4, py + CELL - 4);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawGrid(r, game) {
@@ -394,11 +425,46 @@ function drawGolden(r, game) {
   ctx.restore();
 }
 
+function drawPowerUp(r, game) {
+  const power = game.powerUp;
+  if (!power) return;
+  if (!r.reduceMotion && power.ttl <= 15 && power.ttl % 4 < 2) return;
+  const { ctx, theme } = r;
+  const colors = {
+    rebase: '#58a6ff',
+    fork: '#a371f7',
+    squash: '#f0883e',
+  };
+  const { px, py } = cellPx(power.x, power.y);
+  ctx.save();
+  ctx.shadowColor = colors[power.type] || theme.accent;
+  ctx.shadowBlur = r.reduceMotion ? 6 : 10;
+  ctx.fillStyle = colors[power.type] || theme.accent;
+  roundedRect(ctx, px, py, CELL, CELL, 4);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold 9px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(power.type[0].toUpperCase(), px + CELL / 2, py + CELL / 2 + 0.5);
+  ctx.restore();
+}
+
 function segmentColor(theme, index, total) {
   if (index === 0) return theme.head;
   const ratio = 1 - index / total;
   const lvl = Math.min(3, Math.floor(ratio * 4));
   return theme.levels[lvl];
+}
+
+function playerSegmentColor(r, index, total) {
+  const skin = r.cosmetics?.skin?.colors;
+  if (!skin) return segmentColor(r.theme, index, total);
+  if (index === 0) return skin.head;
+  const ratio = 1 - index / total;
+  const level = Math.min(3, Math.floor(ratio * 4));
+  return skin.levels[level];
 }
 
 // Interpolated pixel positions for each segment. prevSnake is the segment
@@ -688,10 +754,28 @@ function drawSnake(r, game, prevSnake, alpha) {
       const flash = r.reduceMotion ? true : Math.floor(r.deathFlashTimer / 4) % 2 === 0;
       return flash ? theme.death : theme.deathDark;
     }
-    return segmentColor(theme, i, body.length);
+    return playerSegmentColor(r, i, body.length);
   };
 
+  if (!isDying && game.forkTicks > 0) {
+    const dir = game.dir;
+    const dx = dir === 0 || dir === 2 ? 4 : 0;
+    const dy = dir === 1 || dir === 3 ? 4 : 0;
+    const branch = positions.map((position) => ({ x: position.x + dx, y: position.y + dy }));
+    ctx.save();
+    ctx.globalAlpha = 0.38;
+    drawSnakeBody(ctx, branch, colorAt);
+    ctx.restore();
+  }
+
+  ctx.save();
+  const trail = !isDying && r.cosmetics?.trail?.trail;
+  if (trail) {
+    ctx.shadowColor = trail.color;
+    ctx.shadowBlur = trail.blur;
+  }
   drawSnakeBody(ctx, positions, colorAt);
+  ctx.restore();
 
   // Face on the head — X-eyes through the death flash, the full face otherwise.
   if (positions.length) {
@@ -739,7 +823,8 @@ function drawFloatingTexts(r) {
 // visible viewport, not the (possibly wider) logical board.
 function drawComboMeter(r, game, alpha) {
   if (!game.alive || game.won || game.streak === 0) return;
-  const remaining = 1 - (game.stepsSinceFood + alpha) / STREAK_WINDOW;
+  const windowSteps = game.dailyBrief?.streakWindow || STREAK_WINDOW;
+  const remaining = 1 - (game.stepsSinceFood + alpha) / windowSteps;
   if (remaining <= 0) return;
   const { ctx, theme } = r;
   const w = 70;
@@ -818,9 +903,11 @@ export function draw(r, game, prevSnake, alpha, opts = {}) {
   if (r.camera) ctx.translate(-r.camera.x, 0);
   drawMonthLabels(r, monthLabels);
   drawGrid(r, game);
+  drawWalls(r, game);
   drawFood(r, game);
   drawGolden(r, game);
   drawRotten(r, game);
+  drawPowerUp(r, game);
   for (const g of ghostList) drawGhost(r, g);
   drawSnake(r, game, prevSnake, alpha);
   if (r.nomTimer > 0) r.nomTimer--; // drain the eating-squint timer once per frame

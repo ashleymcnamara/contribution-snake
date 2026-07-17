@@ -122,10 +122,15 @@
         <span class="stat-value" id="best">0</span>
       </div>
       <span class="race-pos" id="race-pos" hidden></span>
+      <span class="power-status" id="power-status" hidden></span>
       <button class="icon-btn" id="pause-btn" type="button" aria-label="Pause" disabled></button>
     </div>
 
     <div class="contribution-label" id="board-label">Snake graph</div>
+    <div class="run-brief" id="run-brief" hidden>
+      <strong id="run-brief-title"></strong>
+      <span id="run-brief-text"></span>
+    </div>
 
     <div class="canvas-wrapper">
       <canvas id="game" role="img" aria-label="Snake game board styled as a GitHub contribution graph"></canvas>
@@ -138,10 +143,21 @@
 
         <!-- Start screen -->
         <div class="mode-buttons" id="mode-buttons">
-          <button class="btn" id="btn-classic">Classic</button>
-          <button class="btn btn-secondary" id="btn-daily">Daily challenge</button>
-          <div class="mode-note" id="daily-note" hidden></div>
-          <button class="btn btn-secondary" id="btn-graph">Play your graph</button>
+          <button class="btn mode-entry mode-entry-classic" id="btn-classic">
+            <span class="mode-entry-title">Classic</span>
+            <span class="mode-entry-copy">Endless, campaign, and legendary years</span>
+          </button>
+          <div class="daily-entry">
+            <button class="btn btn-secondary mode-entry mode-entry-daily" id="btn-daily">
+              <span class="mode-entry-title">Daily challenge</span>
+              <span class="mode-entry-copy">The same board and brief for everyone</span>
+              <span class="mode-note" id="daily-note" hidden></span>
+            </button>
+          </div>
+          <button class="btn btn-secondary mode-entry mode-entry-graph" id="btn-graph">
+            <span class="mode-entry-title">Play your graph</span>
+            <span class="mode-entry-copy">Turn your GitHub year into the board</span>
+          </button>
           <details class="variant-details" id="variant-details">
             <summary id="variant-summary">Variants</summary>
             <div class="variant-row">
@@ -159,12 +175,38 @@
                  spellcheck="false" maxlength="39" aria-label="GitHub username">
           <button class="btn" type="submit">Play</button>
         </form>
+
+        <!-- Classic hub -->
+        <div class="classic-hub" id="classic-hub" hidden>
+          <button class="btn classic-endless" id="btn-endless">
+            <span>Endless Classic</span>
+            <span class="btn-subline">Ranked · Rebase, Fork &amp; Squash enabled</span>
+          </button>
+          <section class="hub-section" aria-labelledby="campaign-heading">
+            <div class="hub-heading-row">
+              <h2 class="hub-heading" id="campaign-heading">Campaign</h2>
+              <span class="hub-progress" id="campaign-progress"></span>
+            </div>
+            <p class="hub-copy">Five crafted routes that introduce new walls and goals as you climb.</p>
+            <div class="campaign-list" id="campaign-list"></div>
+          </section>
+          <section class="hub-section" aria-labelledby="legends-heading">
+            <div class="hub-heading-row">
+              <h2 class="hub-heading" id="legends-heading">Legends archive</h2>
+            </div>
+            <p class="hub-copy">Play a real contribution year from an open-source legend.</p>
+            <div class="legends-list" id="legends-list"></div>
+          </section>
+        </div>
+        <button class="btn btn-secondary" id="classic-back" hidden>Back to modes</button>
+
         <div class="menu-links" id="menu-links">
           <button class="linklike" id="btn-leaderboard">Leaderboard</button>
           <button class="linklike" id="btn-watch-shared" hidden>Watch again</button>
           <button class="linklike" id="btn-watch-best" hidden>Watch your best run</button>
           <button class="linklike" id="btn-stats" hidden>Stats</button>
           <button class="linklike" id="btn-achievements" hidden>Achievements</button>
+          <button class="linklike" id="btn-locker">Locker</button>
           <button class="linklike" id="btn-install" hidden>Install app</button>
         </div>
 
@@ -175,6 +217,10 @@
         <!-- Achievements panel -->
         <div class="achievements-panel" id="achievements-panel" hidden></div>
         <button class="btn btn-secondary" id="achievements-back" hidden>Back</button>
+
+        <!-- Cosmetics panel -->
+        <div class="cosmetics-panel" id="cosmetics-panel" hidden></div>
+        <button class="btn btn-secondary" id="cosmetics-back" hidden>Back</button>
 
         <!-- Pause -->
         <button class="btn" id="btn-resume" hidden>Resume</button>
@@ -203,9 +249,15 @@
         <div class="leaderboard-tabs" id="lb-tabs" hidden>
           <button class="btn btn-secondary" id="lb-tab-all">All-time</button>
           <button class="btn btn-secondary" id="lb-tab-daily">Daily</button>
+          <button class="btn btn-secondary" id="lb-tab-friends">Friends</button>
           <button class="btn btn-secondary" id="lb-tab-graph" hidden>Graph</button>
           <button class="btn btn-secondary" id="lb-back">Back</button>
         </div>
+        <form class="input-row friends-row" id="friends-row" hidden>
+          <input id="friends-input" placeholder="Leaderboard names, comma-separated" autocomplete="off"
+                 spellcheck="false" maxlength="220" aria-label="Friend leaderboard names">
+          <button class="btn" type="submit">Save</button>
+        </form>
         <div class="leaderboard" id="leaderboard" hidden></div>
         </div>
       </div>

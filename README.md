@@ -14,15 +14,15 @@ Steer with the arrow keys or `WASD` — swipe or use the on-screen D-pad on a ph
 
 Three ways to play:
 
-- **Classic** — an endless board that gets faster the longer you survive.
-- **Daily challenge** — everyone gets the *same* board each day, and the day's top ten race alongside you as translucent ghosts. Only your first run counts, so make it good.
+- **Classic** — play the ranked endless board, work through a five-level maze campaign, or raid real archived contribution years in the Legends archive. Rebase, Fork, and Squash power-ups can rescue a crash, double a scoring run, or trim a dangerous tail.
+- **Daily challenge** — everyone gets the *same* board, gameplay modifier, and objective each day, and the day's top ten race alongside you as translucent ghosts. Only your first run counts, so make it good.
 - **Play your graph** — punch in any GitHub username and play their real last-twelve-months graph. Eat the whole year to win.
 
 <p align="center">
   <img src="docs/start.png" alt="The GitSnake start menu" width="360">
 </p>
 
-Along the way there are golden commits for bonus points, achievements to unlock, and server-verified leaderboards (all-time, today's daily, and one per graph). Click any leaderboard score to watch the run back, or export it as a video clip to share. There's also a handful of just-for-fun unranked variants: wrap-around walls, chill speed, rotten commits, and racing your own best ghost.
+Along the way there are golden commits for bonus points, achievements to unlock, and server-verified leaderboards (all-time, today's daily, a local friends view, and one per graph). Daily results copy as a compact five-tile challenge card. Daily streaks, completed objectives, and campaign clears unlock snake skins, grid themes, and trails in the Locker. Click any leaderboard score to watch the run back, or export it as a video clip to share. There's also a handful of just-for-fun unranked variants: wrap-around walls, chill speed, rotten commits, and racing your own best ghost.
 
 ## Under the hood
 

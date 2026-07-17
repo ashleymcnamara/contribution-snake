@@ -5,6 +5,7 @@ playwright-report/
 .netlify/
 .claude/
 .agents/
+.impeccable/hook.cache.json
 server/data.sqlite
 server/data.sqlite-*
 .env

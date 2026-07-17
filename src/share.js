@@ -1,8 +1,10 @@
 // Game-over share card: a 1200x630 PNG (OG-image sized) with the final board
 // and run stats, drawn on an offscreen canvas.
+import { dailyObjectiveProgress } from './game/daily.js';
+
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
-function drawBoard(ctx, game, theme, x, y, maxW, maxH) {
+function drawBoard(ctx, game, theme, cosmetics, x, y, maxW, maxH) {
   const gap = 3;
   const cell = Math.min(
     Math.floor((maxW - gap * game.cols) / game.cols),
@@ -13,22 +15,28 @@ function drawBoard(ctx, game, theme, x, y, maxW, maxH) {
   const ox = x + (maxW - w) / 2;
 
   const snakeCells = new Map();
+  const skin = cosmetics?.skin?.colors;
   game.snake.forEach((seg, i) => {
     const ratio = 1 - i / game.snake.length;
     const lvl = Math.min(3, Math.floor(ratio * 4));
-    snakeCells.set(`${seg.x},${seg.y}`, i === 0 ? theme.head : theme.levels[lvl]);
+    snakeCells.set(`${seg.x},${seg.y}`,
+      i === 0 ? skin?.head || theme.head : skin?.levels?.[lvl] || theme.levels[lvl]);
   });
 
   for (let cx = 0; cx < game.cols; cx++) {
     for (let cy = 0; cy < game.rows; cy++) {
       const key = `${cx},${cy}`;
-      let fill = theme.empty;
+      let fill = cosmetics?.board?.colors?.empty || theme.empty;
       if (game.mode === 'graph') {
         const lvl = game.cells.get(key);
         if (lvl) fill = theme.levels[lvl - 1];
       }
       if (snakeCells.has(key)) fill = snakeCells.get(key);
+      else if (game.walls?.has(key)) fill = theme.borderSubtle;
       else if (game.food && game.food.x === cx && game.food.y === cy) fill = theme.food;
+      else if (game.powerUp && game.powerUp.x === cx && game.powerUp.y === cy) {
+        fill = { rebase: '#58a6ff', fork: '#a371f7', squash: '#f0883e' }[game.powerUp.type];
+      }
       ctx.fillStyle = fill;
       ctx.beginPath();
       ctx.roundRect(ox + cx * step, y + cy * step, cell, cell, 2);
@@ -93,7 +101,7 @@ export function drawCardChrome(ctx, { theme, title = 'GitSnake', subtitle = '', 
   }
 }
 
-export function buildShareCard({ game, theme, modeLabel, username }) {
+export function buildShareCard({ game, theme, cosmetics = null, modeLabel, username, year = null }) {
   const canvas = document.createElement('canvas');
   canvas.width = CARD_W;
   canvas.height = CARD_H;
@@ -104,12 +112,12 @@ export function buildShareCard({ game, theme, modeLabel, username }) {
 
   drawCardChrome(ctx, {
     theme,
-    subtitle: username ? `${modeLabel} · @${username}` : modeLabel,
+    subtitle: username ? `${modeLabel} · @${username}${year ? ` · ${year}` : ''}` : modeLabel,
     stats: runStats(game),
     footer: game.won ? 'Ate the whole year.' : 'Don’t break the build.',
   });
 
-  drawBoard(ctx, game, theme, CARD_BOARD.x, CARD_BOARD.y, CARD_BOARD.w, CARD_BOARD.h);
+  drawBoard(ctx, game, theme, cosmetics, CARD_BOARD.x, CARD_BOARD.y, CARD_BOARD.w, CARD_BOARD.h);
 
   return canvas;
 }
@@ -127,8 +135,11 @@ export async function downloadCard(canvas, filename = 'gitsnake-run.png') {
 
 // Canonical URL for a run — graph mode deep-links to the username so a
 // shared link opens ready to play that exact graph.
-export function gameUrl({ mode, username }) {
+export function gameUrl({ mode, username, year = null }) {
   const base = location.origin + location.pathname;
+  if (year && username) {
+    return `${base}?legend=${encodeURIComponent(username)}&year=${encodeURIComponent(year)}`;
+  }
   if (mode === 'graph' && username) return `${base}?user=${encodeURIComponent(username)}`;
   if (mode === 'daily') return `${base}?daily=1`;
   return base;
@@ -164,19 +175,51 @@ export async function nativeShare({ text, url, canvas }) {
   }
 }
 
-export function shareText({ game, mode, day, rank, username }) {
+export function dailyChallengeNumber(day) {
+  const start = Date.parse('2026-01-01T00:00:00Z');
+  const date = Date.parse(`${day}T00:00:00Z`);
+  return Number.isFinite(date) ? Math.max(1, Math.floor((date - start) / 86400000) + 1) : 1;
+}
+
+export function dailyShareGrid(game) {
+  const objective = dailyObjectiveProgress(game);
+  const checks = [
+    game.score >= 50,
+    game.score >= 150,
+    game.bestStreak >= 5,
+    game.goldenEaten >= 1,
+    objective.complete,
+  ];
+  return checks.map((complete, index) => complete ? (index === 4 ? '🟨' : '🟩') : '⬛').join('');
+}
+
+export function shareText({
+  game, mode, day, rank, username, year = null, campaignName = null,
+}) {
   const rankTag = rank ? ` · #${rank}${mode === 'daily' ? ' today' : ''}` : '';
   if (mode === 'daily') {
-    return `GitSnake Daily ${day} — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
+    const objective = dailyObjectiveProgress(game);
+    const result = `GitSnake Daily #${dailyChallengeNumber(day)} · ${day}\n` +
+      `${dailyShareGrid(game)}\n` +
+      `${game.score} contributions · ${game.bestStreak} streak${rankTag}`;
+    return objective.label
+      ? `${result}\n🎯 ${objective.label} ${objective.complete ? '✓' : `${objective.current}/${objective.target}`}`
+      : result;
   }
   if (mode === 'graph') {
     const pct = game.totalCells
       ? Math.round(((game.totalCells - game.cells.size) / game.totalCells) * 100)
       : 0;
-    const who = username ? `@${username}'s year of GitHub contributions` : 'a year of GitHub contributions';
+    const who = username
+      ? `@${username}'s${year ? ` ${year}` : ''} GitHub contribution year`
+      : 'a year of GitHub contributions';
     return game.won
       ? `I ate all of ${who} — ${game.score} points. Think you can too?`
       : `I ate ${pct}% of ${who} — ${game.score} points. Think you can beat that?`;
+  }
+  if (mode === 'campaign') {
+    return `I ${game.won ? 'cleared' : 'played'} ${campaignName || 'a GitSnake campaign level'} ` +
+      `with ${game.score} points and a ${game.bestStreak} best streak.`;
   }
   return `GitSnake — ${game.score} contributions, ${game.bestStreak} best streak${rankTag}`;
 }

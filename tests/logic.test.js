@@ -141,6 +141,13 @@ describe('graph mode sessions', () => {
     expect((await logic.createSession(store, 'graph', {})).status).toBe(400);
   });
 
+  it('rejects invalid historical contribution years before fetching GitHub', async () => {
+    const store = createMemoryStore();
+    const res = await logic.contributions(store, 'octocat', 2007);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Contribution year/);
+  });
+
   it('verifies a winning graph run and ranks it on the per-user board', async () => {
     const store = createMemoryStore();
     const grid = emptyGrid();
@@ -195,6 +202,26 @@ describe('all-time leaderboard', () => {
     expect(rows[3]).toMatchObject({ mode: 'classic', day: null });
   });
 
+  describe('friends leaderboard', () => {
+    it('filters a Daily board to the requested local friend names', async () => {
+      const store = createMemoryStore();
+      const day = '2026-07-17';
+      await store.insertScore({ id: 'aaaaaaaa', mode: 'daily', day, name: 'Ashley', score: 300, bestStreak: 7, snakeLength: 10, createdAt: 1000 });
+      await store.insertScore({ id: 'bbbbbbbb', mode: 'daily', day, name: 'Mona', score: 450, bestStreak: 9, snakeLength: 12, createdAt: 2000 });
+      await store.insertScore({ id: 'cccccccc', mode: 'daily', day, name: 'Stranger', score: 900, bestStreak: 12, snakeLength: 15, createdAt: 3000 });
+
+      const board = await logic.leaderboard(store, {
+        mode: 'daily',
+        day,
+        friends: 'ashley,mona',
+      });
+
+      expect(board.status).toBe(200);
+      expect(board.body.scope).toBe('friends');
+      expect(board.body.entries.map((entry) => entry.name)).toEqual(['Mona', 'Ashley']);
+    });
+  });
+
   it('breaks score ties by earliest submission', async () => {
     const store = createMemoryStore();
     await store.insertScore({ id: 'later000', mode: 'classic', day: null, name: 'late', score: 100, bestStreak: 1, snakeLength: 5, createdAt: 5000 });
@@ -207,7 +234,7 @@ describe('all-time leaderboard', () => {
 describe('one-shot daily', () => {
   it('ranks only the first daily submission per client', async () => {
     const store = createMemoryStore();
-    const run = playBotRun(777, { mode: 'daily' });
+    const run = playBotRun(777, { mode: 'daily', day: logic.todayUTC() });
     const ageMs = run.elapsedGameMs + 5000;
     const s1 = await seedSession(store, { seed: 777, mode: 'daily', ageMs, clientId: 'client-a' });
     const s2 = await seedSession(store, { seed: 777, mode: 'daily', ageMs, clientId: 'client-a' });
@@ -228,7 +255,7 @@ describe('one-shot daily', () => {
 
   it('leaves legacy sessions without a clientId unrestricted', async () => {
     const store = createMemoryStore();
-    const run = playBotRun(42, { mode: 'daily' });
+    const run = playBotRun(42, { mode: 'daily', day: logic.todayUTC() });
     const ageMs = run.elapsedGameMs + 5000;
     const s1 = await seedSession(store, { seed: 42, mode: 'daily', ageMs });
     const s2 = await seedSession(store, { seed: 42, mode: 'daily', ageMs });

@@ -69,6 +69,21 @@ export function createBlobStore() {
         bestStreak: s.bestStreak, createdAt: s.createdAt,
       }));
     },
+    async getFriendLeaderboard(mode, day, names, limit) {
+      const wanted = new Set(names);
+      const keys = (await listKeys(scores, scorePrefix(mode, day))).slice(0, 1000);
+      const matched = [];
+      for (let i = 0; i < keys.length && matched.length < limit; i += 50) {
+        const rows = await Promise.all(keys.slice(i, i + 50)
+          .map((key) => scores.get(key, { type: 'json' })));
+        matched.push(...rows.filter((score) =>
+          score && wanted.has(String(score.name).toLowerCase())));
+      }
+      return matched.slice(0, limit).map((score) => ({
+        replayId: score.id, name: score.name, score: score.score,
+        bestStreak: score.bestStreak, createdAt: score.createdAt,
+      }));
+    },
     // Global "Hall of Fame": the highest scores across every board. The key's
     // score/timestamp segment (everything after `mode/day/`) is fixed-width, so
     // it sorts identically across boards — merge all keys, take the best N.

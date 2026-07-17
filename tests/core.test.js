@@ -4,7 +4,9 @@ import {
   STREAK_WINDOW, BASE_SPEED, MIN_SPEED,
   CURRENT_RULES, GOLDEN_EVERY, GOLDEN_TTL, GOLDEN_TIME_MS, GOLDEN_MIN_TTL, GOLDEN_POINTS,
   ROTTEN_EVERY, ROTTEN_TTL, ROTTEN_PENALTY,
+  POWERUP_EVERY, FORK_TTL,
 } from '../src/game/core.js';
+import { dailyBriefFor, dailyObjectiveProgress } from '../src/game/daily.js';
 import { playBotRun } from './helpers.js';
 
 describe('deterministic core', () => {
@@ -20,6 +22,112 @@ describe('deterministic core', () => {
       expect(replayed.elapsedGameMs).toBe(live.elapsedGameMs);
     }
   });
+
+  describe('rules v4: Daily briefs', () => {
+    it('selects the same brief for the same UTC day and applies its modifier', () => {
+      const day = '2026-07-17';
+      const brief = dailyBriefFor(day);
+      const a = createGame({ mode: 'daily', seed: 88, day });
+      const b = createGame({ mode: 'daily', seed: 88, day });
+      expect(a.dailyBrief).toEqual(brief);
+      expect(b.dailyBrief).toEqual(brief);
+      expect(a.speed).toBe(b.speed);
+    });
+
+    it('tracks objective progress from the live game state', () => {
+      const game = createGame({ mode: 'daily', seed: 1, day: '2026-07-17' });
+      const objective = game.dailyBrief.objective;
+      if (objective.kind === 'score') game.score = objective.target;
+      if (objective.kind === 'golden') game.goldenEaten = objective.target;
+      if (objective.kind === 'streak') game.bestStreak = objective.target;
+      if (objective.kind === 'level') game.level = objective.target;
+      expect(dailyObjectiveProgress(game).complete).toBe(true);
+    });
+
+    it('keeps legacy Daily runs free of new modifiers', () => {
+      const game = createGame({ mode: 'daily', seed: 1, day: '2026-07-17', rules: 3 });
+      expect(game.dailyBrief).toBeNull();
+      expect(game.speed).toBe(BASE_SPEED);
+    });
+  });
+
+  describe('rules v4: Classic power-ups', () => {
+    function eatFoods(game, count) {
+      for (let i = 0; i < count; i++) {
+        game.food = { x: game.snake[0].x + 1, y: game.snake[0].y };
+        step(game);
+      }
+    }
+
+    it('spawns a deterministic power-up after the configured cadence', () => {
+      const a = createGame({ mode: 'classic', seed: 121 });
+      const b = createGame({ mode: 'classic', seed: 121 });
+      eatFoods(a, POWERUP_EVERY);
+      eatFoods(b, POWERUP_EVERY);
+      expect(a.powerUp).toEqual(b.powerUp);
+      expect(['rebase', 'fork', 'squash']).toContain(a.powerUp.type);
+    });
+
+    it('Fork temporarily doubles commit points', () => {
+      const game = createGame({ mode: 'classic', seed: 7 });
+      game.powerUp = { x: game.snake[0].x + 1, y: game.snake[0].y, type: 'fork', ttl: 5 };
+      game.food = { x: 0, y: 0 };
+      expect(step(game).powerUp).toBe('fork');
+      expect(game.forkTicks).toBe(FORK_TTL);
+      game.food = { x: game.snake[0].x + 1, y: game.snake[0].y };
+      expect(step(game).points).toBe(20);
+    });
+
+    it('Squash immediately shortens a long snake', () => {
+      const game = createGame({ mode: 'classic', seed: 7 });
+      game.snake.push(...Array.from({ length: 10 }, (_, i) => ({ x: 2 + i, y: 2 })));
+      game.powerUp = { x: game.snake[0].x + 1, y: game.snake[0].y, type: 'squash', ttl: 5 };
+      game.food = { x: 0, y: 0 };
+      const before = game.snake.length;
+      const ev = step(game);
+      expect(ev.powerUp).toBe('squash');
+      expect(ev.squashed).toBeGreaterThan(0);
+      expect(game.snake.length).toBeLessThan(before);
+    });
+
+    it('Rebase restores an earlier safe position instead of ending the run', () => {
+      const game = createGame({ mode: 'classic', seed: 7 });
+      game.rebaseCharges = 1;
+      let ev = {};
+      while (!ev.rebased && game.alive) ev = step(game);
+      expect(ev.rebased).toBe(true);
+      expect(game.alive).toBe(true);
+      expect(game.rebaseCharges).toBe(0);
+      expect(game.snake[0].x).toBeLessThan(game.cols - 1);
+    });
+  });
+
+  describe('campaign boards', () => {
+    it('treats configured obstacles as collisions', () => {
+      const game = createGame({
+        mode: 'campaign',
+        seed: 1,
+        walls: [{ x: 19, y: 11 }],
+        targetFood: 3,
+      });
+      const ev = step(game);
+      expect(ev.died).toBe(true);
+      expect(ev.cause).toBe('obstacle');
+    });
+
+    it('wins after collecting the level target', () => {
+      const game = createGame({ mode: 'campaign', seed: 1, targetFood: 2 });
+      eatAhead(game);
+      const ev = eatAhead(game);
+      expect(ev.won).toBe(true);
+      expect(game.won).toBe(true);
+    });
+  });
+
+  function eatAhead(game) {
+    game.food = { x: game.snake[0].x + 1, y: game.snake[0].y };
+    return step(game);
+  }
 
   it('replays legacy v1 runs under v1 rules to an identical final state', () => {
     for (const seed of [1, 42, 777]) {

@@ -47,17 +47,27 @@ export function toast(icon, title, sub) {
 
 // --- overlay management ---
 const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-watch-shared',
-  'btn-watch-best', 'btn-stats', 'btn-achievements', 'btn-install', 'stats-panel', 'stats-back',
-  'achievements-panel', 'achievements-back', 'btn-resume', 'submit-row',
-  'over-actions', 'share-row', 'lb-tabs', 'leaderboard', 'over-stats'];
+  'btn-watch-best', 'btn-stats', 'btn-achievements', 'btn-locker', 'btn-install',
+  'classic-hub', 'classic-back', 'stats-panel', 'stats-back',
+  'achievements-panel', 'achievements-back', 'cosmetics-panel', 'cosmetics-back',
+  'btn-resume', 'submit-row', 'over-actions', 'share-row', 'lb-tabs', 'friends-row',
+  'leaderboard', 'over-stats'];
 
 export function showOverlay(ctx, title, sub, sections = []) {
   clearCountdown(); // cancel any pending resume countdown if we navigate away
   updateRaceStrip(null); // the live position pill only makes sense mid-run
+  const overlay = $('overlay');
+  overlay.dataset.view = sections.includes('classic-hub')
+    ? 'classic'
+    : sections.includes('mode-buttons') ? 'home' : 'panel';
+  document.body.dataset.overlayView = overlay.dataset.view;
+  const header = document.querySelector('.header');
+  if (header) header.inert = overlay.dataset.view === 'classic';
   $('overlay-title').textContent = title;
   $('overlay-sub').textContent = sub;
   for (const id of OVERLAY_SECTIONS) $(id).hidden = !sections.includes(id);
-  $('overlay').style.display = 'flex';
+  overlay.style.display = 'flex';
+  overlay.scrollTop = 0;
   // The touch d-pad is only useful during active play — keep it out of the way
   // (and out of the layout, so the board can reclaim the space) on every menu,
   // game-over, leaderboard and pause screen.
@@ -70,6 +80,9 @@ export function showOverlay(ctx, title, sub, sections = []) {
 
 export function hideOverlay() {
   $('overlay').style.display = 'none';
+  delete document.body.dataset.overlayView;
+  const header = document.querySelector('.header');
+  if (header) header.inert = false;
 }
 
 // Show/hide the on-screen d-pad and re-fit the board to the space that leaves.

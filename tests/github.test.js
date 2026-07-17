@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toGrid, isValidUsername } from '../server/github.js';
+import { toGrid, isValidUsername, isValidContributionYear } from '../server/github.js';
 
 function makeDays(startISO, count, levelFn) {
   const start = new Date(startISO + 'T00:00:00Z');
@@ -39,6 +39,19 @@ describe('isValidUsername', () => {
     expect(isValidUsername('ashleymcnamara')).toBe(true);
     expect(isValidUsername('a-b-c')).toBe(true);
     expect(isValidUsername('x')).toBe(true);
+  });
+
+  describe('historical contribution years', () => {
+    it('accepts GitHub-era years through the current UTC year', () => {
+      expect(isValidContributionYear(2008)).toBe(true);
+      expect(isValidContributionYear(new Date().getUTCFullYear())).toBe(true);
+    });
+
+    it('rejects pre-GitHub, future, and malformed years', () => {
+      expect(isValidContributionYear(2007)).toBe(false);
+      expect(isValidContributionYear(new Date().getUTCFullYear() + 1)).toBe(false);
+      expect(isValidContributionYear('not-a-year')).toBe(false);
+    });
   });
 
   it('rejects invalid shapes', () => {

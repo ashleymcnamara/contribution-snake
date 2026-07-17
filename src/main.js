@@ -1,5 +1,7 @@
 import './style.css';
 import { createGame, queueInput, step, boardSize, ROTTEN_PENALTY } from './game/core.js';
+import { dailyBriefFor, dailyObjectiveProgress } from './game/daily.js';
+import { CAMPAIGN_LEVELS, campaignLevel, nextCampaignLevel } from './game/campaign.js';
 import { botSteer } from './game/bot.js';
 import { randomSeed } from './game/rng.js';
 import {
@@ -11,9 +13,14 @@ import * as audio from './audio.js';
 import * as api from './api.js';
 import {
   buildShareCard, downloadCard, shareText, gameUrl, shareLinks, nativeShare,
+  dailyChallengeNumber,
 } from './share.js';
 import { icons } from './icons.js';
 import { ACHIEVEMENTS, loadUnlocked, reconcileUnlocked, evaluate as evaluateAchievements } from './achievements.js';
+import {
+  COSMETICS, loadProgress, metricValue, cosmeticUnlocked, campaignUnlocked,
+  recordProgress, selectCosmetic, resolveLoadout,
+} from './progression.js';
 import {
   escapeHtml, announce, haptic, toast, showOverlay, hideOverlay,
   setTouchControls, skipCountdown, runCountdown,
@@ -68,8 +75,41 @@ let ghosts = [];
 let spect = null;
 let spectSpeed = 1; // 1 | 2 | 4 playback multiplier
 let lastDeathCause = null; // 'wall' | 'self' from the fatal step
+let activeCampaign = null;
+let activeLegend = null;
+let runUnranked = false;
+let againAction = null;
 
-const MODE_LABELS = { classic: 'Classic', daily: 'Daily challenge', graph: 'Your graph' };
+const MODE_LABELS = {
+  classic: 'Classic',
+  daily: 'Daily challenge',
+  graph: 'Your graph',
+  campaign: 'Campaign',
+};
+
+const LEGENDS = [
+  {
+    id: 'torvalds-2016',
+    username: 'torvalds',
+    year: 2016,
+    title: '@torvalds · 2016',
+    description: 'An archived year from the creator of Linux and Git.',
+  },
+  {
+    id: 'yyx990803-2020',
+    username: 'yyx990803',
+    year: 2020,
+    title: '@yyx990803 · 2020',
+    description: 'An archived year from Vue creator Evan You.',
+  },
+  {
+    id: 'sindresorhus-2017',
+    username: 'sindresorhus',
+    year: 2017,
+    title: '@sindresorhus · 2017',
+    description: 'An archived year from prolific open-source maintainer Sindre Sorhus.',
+  },
+];
 
 // Shared mutable state, handed to the extracted ui/race/spectate modules so
 // they read and write the same game state main owns without importing main
@@ -98,7 +138,12 @@ const ctx = {
   updatePauseButton,
 };
 
-function highScoreKey() { return `gh-snake-high-${mode}`; }
+function highScoreKey() {
+  if (activeLegend) return `gh-snake-high-legend-${activeLegend.id}`;
+  return mode === 'campaign' && activeCampaign
+    ? `gh-snake-high-campaign-${activeCampaign.id}`
+    : `gh-snake-high-${mode}`;
+}
 function getHighScore() { return parseInt(localStorage.getItem(highScoreKey()) || '0'); }
 
 // --- lifetime local stats ---
@@ -113,7 +158,8 @@ function loadStats() {
 }
 
 function recordStats() {
-  const s = loadStats();
+  const previous = loadStats();
+  const s = { ...previous };
   s.games++;
   s.totalScore += game.score;
   s.bestScore = Math.max(s.bestScore, game.score);
@@ -125,6 +171,7 @@ function recordStats() {
     s.lastDailyDay = session.day;
   }
   localStorage.setItem(STATS_KEY, JSON.stringify(s));
+  return { previous, current: s };
 }
 
 // --- variant toggles (unranked) ---
@@ -138,7 +185,7 @@ function getVariants() {
 
 function variantsActiveFor(m) {
   const v = getVariants();
-  return (v.wrap || v.chill || v.rotten) && m !== 'daily';
+  return (v.wrap || v.chill || v.rotten) && m !== 'daily' && m !== 'campaign';
 }
 
 function racePref() {
@@ -177,12 +224,62 @@ function updateUI() {
     $('level-label').textContent = 'Days:';
     $('level').textContent = `${game.totalCells - game.cells.size}/${game.totalCells}`;
     $('level').style.minWidth = '7ch'; // reserve width so the bar doesn't pulse
+  } else if (game?.mode === 'campaign') {
+    $('level-label').textContent = 'Goal:';
+    $('level').textContent = `${game.foodEaten}/${game.targetFood}`;
+    $('level').style.minWidth = '7ch';
   } else {
     $('level-label').textContent = 'Level:';
     $('level').textContent = game ? game.level : 1;
     $('level').style.minWidth = '';
   }
   $('best').textContent = getHighScore();
+  updatePowerStatus();
+  updateRunBrief();
+}
+
+function updatePowerStatus() {
+  const el = $('power-status');
+  if (!game || (!game.rebaseCharges && !game.forkTicks)) {
+    el.hidden = true;
+    return;
+  }
+  const active = [];
+  if (game.rebaseCharges) active.push(`Rebase ×${game.rebaseCharges}`);
+  if (game.forkTicks) active.push(`Fork ${Math.ceil(game.forkTicks * game.speed / 1000)}s`);
+  el.textContent = active.join(' · ');
+  el.hidden = false;
+}
+
+function applyLoadout() {
+  renderer.cosmetics = resolveLoadout(loadStats());
+  renderer.gridTheme = null;
+}
+
+function updateRunBrief() {
+  const el = $('run-brief');
+  if (!game || state === 'idle' || state === 'over') {
+    el.hidden = true;
+    return;
+  }
+  let title = '';
+  let text = '';
+  if (mode === 'daily' && game.dailyBrief) {
+    title = game.dailyBrief.title;
+    text = `${game.dailyBrief.modifier} Objective: ${game.dailyBrief.objective.label}.`;
+  } else if (mode === 'campaign' && activeCampaign) {
+    title = activeCampaign.name;
+    text = `${game.foodEaten}/${activeCampaign.target} commits · R Rebase · F Fork · S Squash`;
+  } else if (mode === 'classic') {
+    title = 'Power-ups';
+    text = 'R Rebase rewinds a crash · F Fork doubles points · S Squash trims your tail';
+  } else if (activeLegend) {
+    title = 'Legends archive';
+    text = `${activeLegend.title} · historical contribution snapshot`;
+  }
+  $('run-brief-title').textContent = title;
+  $('run-brief-text').textContent = text;
+  el.hidden = !title;
 }
 
 // One-time hint for touch players: swiping isn't discoverable, and the
@@ -276,7 +373,7 @@ function showStartScreen() {
     best > 0 ? `Eat commits. Grow your streak. Best: ${best}.` : 'Eat commits. Grow your streak.',
     ['mode-buttons', ...(serverOk ? ['btn-leaderboard'] : []),
       ...(localBest ? ['btn-watch-best'] : []),
-      ...(stats.games > 0 ? ['btn-stats', 'btn-achievements'] : []),
+      ...(stats.games > 0 ? ['btn-stats', 'btn-achievements'] : []), 'btn-locker',
       ...(installPrompt ? ['btn-install'] : [])]
   );
   if (localBest) {
@@ -285,6 +382,7 @@ function showStartScreen() {
   // No saved run yet -> nothing to race; keep the toggle out of the way.
   $('var-race-label').hidden = !localBest;
   updateVariantNote();
+  $('run-brief').hidden = true;
   startDemo();
   $('mode-note').hidden = serverOk;
   if (!serverOk) {
@@ -327,19 +425,142 @@ function updateDailyNote() {
   const s = Math.floor((msLeft % 60000) / 1000);
   const countdown = h > 0 ? `${h}h ${m}m` : `${m}m ${String(s).padStart(2, '0')}s`;
   const played = JSON.parse(localStorage.getItem(`gh-snake-daily-${day}`) || 'null');
-  let badge = '';
+  const brief = dailyBriefFor(day);
+  let playedBadge = '';
   if (played) {
     const score = Number(played.score) || 0;
     const rank = Number(played.rank) || 0;
-    badge = ` · <span class="daily-done">${icons.check}</span> ${score} pts${rank ? ` (#${rank})` : ''}`;
+    playedBadge = `<span class="daily-played"><span class="daily-done" aria-hidden="true">${icons.check}</span>` +
+      `<span class="sr-only">Played: </span>${score} pts${rank ? ` · #${rank}` : ''}</span>`;
   }
-  el.innerHTML = `New board in ${countdown}${badge}`;
+  el.innerHTML = `<span class="daily-note-heading">` +
+    `<strong>${escapeHtml(brief.title)}</strong>` +
+    `<span>Daily #${dailyChallengeNumber(day)}</span></span>` +
+    `<span class="daily-objective">Objective: ${escapeHtml(brief.objective.label)}</span>` +
+    `<span class="daily-reset">New board in ${countdown}${playedBadge}</span>`;
   el.hidden = false;
 }
 
 setInterval(() => {
   if (state === 'idle' && !$('daily-note').hidden) updateDailyNote();
 }, 1000);
+
+function showClassicScreen() {
+  state = 'idle';
+  updatePauseButton();
+  const progress = loadProgress();
+  const completedCount = CAMPAIGN_LEVELS.filter(
+    (level) => progress.campaignCompleted.includes(level.id),
+  ).length;
+  $('campaign-progress').textContent = `${completedCount}/${CAMPAIGN_LEVELS.length} cleared`;
+  $('campaign-list').innerHTML = CAMPAIGN_LEVELS.map((level, index) => {
+    const unlocked = campaignUnlocked(level.id, progress);
+    const complete = progress.campaignCompleted.includes(level.id);
+    const status = complete ? 'Cleared' : unlocked ? 'Ready' : 'Locked';
+    const stateClass = complete ? 'is-complete' : unlocked ? 'is-ready' : 'is-locked';
+    return `<button class="mode-card campaign-card ${stateClass}" type="button"
+        data-campaign="${level.id}" ${unlocked ? '' : 'disabled'}>
+      <span class="campaign-step" aria-hidden="true">${complete ? icons.check : index + 1}</span>
+      <span class="mode-card-copy">
+        <span class="mode-card-title">${escapeHtml(level.name)}</span>
+        <span class="mode-card-desc">${escapeHtml(level.description)}</span>
+      </span>
+      <span class="mode-card-side">
+        <span class="mode-card-meta">${level.target} commits</span>
+        <span class="mode-card-state">${status}</span>
+      </span>
+    </button>`;
+  }).join('');
+  $('legends-list').innerHTML = LEGENDS.map((legend) => `
+    <button class="mode-card legend-card" type="button" data-legend="${legend.id}" ${serverOk ? '' : 'disabled'}>
+      <span class="legend-card-head">
+        <span class="mode-card-title">@${escapeHtml(legend.username)}</span>
+        <span class="legend-year">${legend.year}</span>
+      </span>
+      <span class="mode-card-desc">${escapeHtml(legend.description)}</span>
+      <span class="legend-card-action">${serverOk ? 'Play year' : 'Server required'}</span>
+    </button>`).join('');
+  showOverlay(ctx, 'Classic',
+    'Rank a clean Endless run, clear five crafted levels, or play a legendary GitHub year.',
+    ['classic-hub', 'classic-back']);
+}
+
+function startCampaign(id) {
+  const level = campaignLevel(id);
+  if (!level || !campaignUnlocked(id)) return;
+  audio.unlock();
+  startRun('campaign', { campaign: level, unranked: true });
+}
+
+async function startLegend(id) {
+  const legend = LEGENDS.find((item) => item.id === id);
+  if (!legend || state === 'loading') return;
+  state = 'loading';
+  const card = $('legends-list').querySelector(`[data-legend="${legend.id}"]`);
+  const cardAction = card?.querySelector('.legend-card-action');
+  card?.classList.add('is-loading');
+  card?.setAttribute('aria-busy', 'true');
+  if (cardAction) cardAction.textContent = 'Fetching year…';
+  $('overlay-sub').textContent = `Fetching the ${legend.title} contribution archive…`;
+  announce(`Fetching ${legend.title}.`);
+  try {
+    graphData = await api.getContributions(legend.username, legend.year);
+    if (!graphData.grid.flat().some((level) => level > 0)) {
+      throw new Error('That archived year has no public contributions to eat.');
+    }
+    activeLegend = legend;
+    state = 'idle';
+    await startRun('graph', { unranked: true, legend });
+  } catch (err) {
+    state = 'idle';
+    showClassicScreen();
+    const message = `Couldn't open ${legend.title}: ${err.message}`;
+    $('overlay-sub').textContent = message;
+    announce(message);
+  }
+}
+
+function cosmeticPreview(item) {
+  if (item.kind === 'skin') {
+    const colors = item.colors?.levels || ['var(--level-1)', 'var(--level-2)', 'var(--level-3)', 'var(--level-4)'];
+    return colors.map((color) => `<span class="cosmetic-swatch" style="background:${color}"></span>`).join('');
+  }
+  if (item.kind === 'board') {
+    const empty = item.colors?.empty || 'var(--level-0)';
+    const border = item.colors?.border || 'var(--border)';
+    return `<span class="cosmetic-swatch" style="background:${empty};border-color:${border}"></span>`;
+  }
+  const color = item.trail?.color || 'var(--surface)';
+  return `<span class="cosmetic-swatch" style="background:${color}"></span>`;
+}
+
+function showCosmeticsScreen() {
+  const stats = loadStats();
+  const progress = loadProgress();
+  const groups = [
+    ['skin', 'Snake skins'],
+    ['board', 'Grid themes'],
+    ['trail', 'Trail effects'],
+  ];
+  $('cosmetics-panel').innerHTML = groups.map(([kind, heading]) => {
+    const cards = COSMETICS.filter((item) => item.kind === kind).map((item) => {
+      const unlocked = cosmeticUnlocked(item, stats, progress);
+      const selected = progress.selected[kind] === item.id;
+      const requirement = item.requirement
+        ? `${Math.min(metricValue(item.requirement.metric, stats, progress), item.requirement.target)}/${item.requirement.target} · ${item.requirement.label}`
+        : 'Unlocked';
+      return `<button class="cosmetic-card${selected ? ' selected' : ''}${unlocked ? '' : ' locked'}"
+          type="button" data-cosmetic-kind="${kind}" data-cosmetic="${item.id}" ${unlocked ? '' : 'disabled'}>
+        <span class="cosmetic-preview">${cosmeticPreview(item)}</span>
+        <span class="cosmetic-name">${escapeHtml(item.name)}</span>
+        <span class="cosmetic-requirement">${escapeHtml(requirement)}</span>
+      </button>`;
+    }).join('');
+    return `<div class="cosmetic-group"><div class="cosmetic-heading">${heading}</div>${cards}</div>`;
+  }).join('');
+  showOverlay(ctx, 'Locker', 'Daily streaks and campaign clears unlock permanent cosmetics.',
+    ['cosmetics-panel', 'cosmetics-back']);
+}
 
 // --- game lifecycle ---
 
@@ -352,9 +573,18 @@ function bestRunFor(m) {
 
 // raceReplayId: race a specific verified run (from a daily leaderboard row)
 // as the ghost instead of the default opponent.
-async function startRun(selectedMode, { raceReplayId = null } = {}) {
+async function startRun(selectedMode, {
+  raceReplayId = null,
+  campaign = null,
+  legend = null,
+  unranked = false,
+} = {}) {
   if (state === 'loading') return;
   mode = selectedMode;
+  activeCampaign = mode === 'campaign' ? campaign : null;
+  activeLegend = mode === 'graph' ? legend : null;
+  runUnranked = unranked || mode === 'campaign';
+  againAction = null;
   session = null;
   submitted = false;
   lastRank = null;
@@ -380,7 +610,7 @@ async function startRun(selectedMode, { raceReplayId = null } = {}) {
 
   let seed = randomSeed();
   let rules; // undefined -> createGame's current default
-  if (serverOk && !useVariants && !raceClassic) {
+  if (serverOk && !useVariants && !raceClassic && !runUnranked && mode !== 'campaign') {
     state = 'loading';
     try {
       session = await api.createSession(mode, mode === 'graph' ? graphData.username : undefined);
@@ -420,9 +650,13 @@ async function startRun(selectedMode, { raceReplayId = null } = {}) {
     mode,
     seed,
     graph: mode === 'graph' ? graphData.grid : null,
+    day: mode === 'daily' ? session?.day : null,
     wrap: variants.wrap,
     speedFactor: variants.chill ? 1.5 : 1,
     rotten: variants.rotten,
+    walls: activeCampaign?.walls || null,
+    targetFood: activeCampaign?.target || 0,
+    campaignId: activeCampaign?.id || null,
     ...(rules ? { rules } : {}),
   });
   const { cols, rows } = boardSize(mode);
@@ -441,9 +675,11 @@ async function startRun(selectedMode, { raceReplayId = null } = {}) {
         : ghosts.length > 1 ? ` · racing the field (${ghosts.length})`
           : ghosts.length === 1 ? ` · racing ${ghosts[0].name}` : '';
   $('board-label').textContent = (
-    mode === 'graph' ? `@${graphData.username} · last 12 months`
+    activeLegend ? `${activeLegend.title} · archived contribution year`
+      : mode === 'graph' ? `@${graphData.username} · last 12 months`
       : mode === 'daily' ? `Daily challenge · ${session.day}`
-        : 'Snake graph') + variantTag;
+        : mode === 'campaign' ? `Campaign · ${activeCampaign.name}`
+          : 'Snake graph') + variantTag;
 
   hideOverlay();
   state = 'resuming';
@@ -466,6 +702,30 @@ async function startRun(selectedMode, { raceReplayId = null } = {}) {
 }
 
 function handleStepEvents(ev) {
+  if (ev.rebased) {
+    prevSnake = game.snake.map((segment) => ({ ...segment }));
+    spawnParticles(renderer, ev.head.x, ev.head.y, '#58a6ff', 18);
+    spawnFloatingText(renderer, ev.head.x, ev.head.y, 'REBASE!', true);
+    audio.playLevelUp();
+    haptic([0, 25, 30, 25]);
+    updateUI();
+    announce(`Rebase restored a safe checkpoint after a ${ev.cause} collision.`);
+    return;
+  }
+  if (ev.powerUp) {
+    const labels = {
+      rebase: 'REBASE READY',
+      fork: 'FORK ×2',
+      squash: `SQUASH -${ev.squashed || 0}`,
+    };
+    const colors = { rebase: '#58a6ff', fork: '#a371f7', squash: '#f0883e' };
+    spawnParticles(renderer, ev.head.x, ev.head.y, colors[ev.powerUp], 14);
+    spawnFloatingText(renderer, ev.head.x, ev.head.y, labels[ev.powerUp], true);
+    audio.playGolden();
+    haptic([0, 18, 25, 18]);
+    updateUI();
+    announce(`${ev.powerUp} power-up collected.`);
+  }
   if (ev.ate) {
     if (ev.golden) {
       spawnParticles(renderer, ev.head.x, ev.head.y, theme.gold, 14);
@@ -487,6 +747,7 @@ function handleStepEvents(ev) {
       announce(`Level ${game.level}`);
     }
     if (ev.goldenSpawned) announce('Golden commit on the board — grab it before it fades.');
+    if (ev.powerUpSpawned) announce('A Git power-up appeared: R for Rebase, F for Fork, or S for Squash.');
     updateUI();
   }
   if (ev.rotten) {
@@ -528,6 +789,7 @@ function tick(now) {
     accumulator -= game.speed;
     steps++;
   }
+  if (game.forkTicks || !$('power-status').hidden) updatePowerStatus();
   // Drop any backlog we didn't consume so the next frame doesn't teleport.
   if (accumulator > game.speed) accumulator = game.speed;
 
@@ -557,19 +819,38 @@ function finishRun(won) {
   localStorage.setItem(highScoreKey(), String(best));
   updateUI();
 
-  recordStats();
+  const objective = mode === 'daily' && game.dailyBrief ? dailyObjectiveProgress(game) : null;
+  const statsResult = recordStats();
+  const progression = recordProgress({
+    stats: statsResult.current,
+    previousStats: statsResult.previous,
+    mode,
+    day: session?.day || null,
+    objectiveComplete: !!objective?.complete,
+    campaignId: activeCampaign?.id || null,
+    won,
+  });
+  if (progression.dailyObjectiveCompleted) {
+    toast(icons.check, 'Daily objective complete', game.dailyBrief.objective.label);
+  }
+  if (progression.campaignCompleted) {
+    toast(icons.check, `${activeCampaign.name} cleared`, 'The next campaign level is unlocked.');
+  }
+  for (const cosmetic of progression.unlocked) {
+    toast(icons.palette, `${cosmetic.name} unlocked`, 'New in your Locker.');
+  }
 
   // Unlock achievements from the freshly-updated lifetime stats plus this run.
   const variant = !!(game.wrap || (game.speedFactor && game.speedFactor !== 1) || game.rottenVariant);
-  const unlocked = evaluateAchievements({
-    stats: loadStats(),
+  const achievementUnlocks = evaluateAchievements({
+    stats: statsResult.current,
     run: { score: game.score, bestStreak: game.bestStreak, won, mode, variant, golden: game.goldenEaten },
   });
-  for (const a of unlocked) toast(a.icon, `${a.name} unlocked`, a.desc);
+  for (const a of achievementUnlocks) toast(a.icon, `${a.name} unlocked`, a.desc);
 
   // Keep your best run per mode locally so it can be re-watched (and raced as
   // a ghost) anytime. The rules version rides along so replays stay faithful.
-  if (game.stepCount > 0) {
+  if (game.stepCount > 0 && ['classic', 'daily', 'graph'].includes(mode) && !activeLegend) {
     const runKey = `gh-snake-bestrun-${mode}`;
     const prevRun = JSON.parse(localStorage.getItem(runKey) || 'null');
     if (!prevRun || game.score > prevRun.score) {
@@ -609,6 +890,7 @@ function finishRun(won) {
   // Headline numbers as stat blocks (same visual language as the stats
   // panel) instead of prose lines that repeat each other.
   const eaten = game.totalCells ? game.totalCells - game.cells.size : 0;
+  const powerUps = Object.values(game.powerUpsCollected || {}).reduce((sum, count) => sum + count, 0);
   const blocks = mode === 'graph'
     ? [
       [game.score, 'points'],
@@ -616,6 +898,13 @@ function finishRun(won) {
       [game.bestStreak, 'best streak'],
       [best, 'best score'],
     ]
+    : mode === 'campaign'
+      ? [
+        [game.score, 'points'],
+        [`${game.foodEaten}/${game.targetFood}`, 'commits'],
+        [powerUps, 'power-ups'],
+        [best, 'level best'],
+      ]
     : [
       [game.score, 'contributions'],
       [game.bestStreak, 'best streak'],
@@ -629,6 +918,20 @@ function finishRun(won) {
   // says where you finished in today's field (by everyone's final score) —
   // which doubles as the submit nudge, so previewRank stays out of the way.
   const verdicts = [];
+  if (objective) {
+    verdicts.push(objective.complete
+      ? `<strong>Objective complete:</strong> ${escapeHtml(objective.label)}.`
+      : `Objective: ${escapeHtml(objective.label)} — ${objective.current}/${objective.target}.`);
+  }
+  if (mode === 'campaign' && won) {
+    const next = nextCampaignLevel(activeCampaign.id);
+    verdicts.push(next
+      ? `<strong>${escapeHtml(next.name)}</strong> is now unlocked.`
+      : '<strong>Campaign complete.</strong> Every level is clear.');
+  }
+  if (activeLegend) {
+    verdicts.push(`You raided ${escapeHtml(activeLegend.title)} from the Legends archive.`);
+  }
   const rival = ghosts.find((g) => g.primary) || (ghosts.length === 1 ? ghosts[0] : null);
   if (rival && rival.finalScore != null) {
     const diff = game.score - rival.finalScore;
@@ -665,17 +968,49 @@ function finishRun(won) {
   statsHtml += `<div class="over-verdicts">${verdicts.map((v) => `<div>${v}</div>`).join('')}</div>`;
 
   const causeLine = lastDeathCause === 'wall' ? 'Ran into the wall'
-    : lastDeathCause === 'self' ? 'Bit your own tail' : null;
+    : lastDeathCause === 'obstacle' ? 'Hit a blocked merge lane'
+      : lastDeathCause === 'self' ? 'Bit your own tail' : null;
   const modeLine = mode === 'daily'
     ? `Daily challenge · ${session?.day || ''}${dailyRanked ? ' · practice (first score counts)' : ''}`
-    : 'Don’t break the build.';
+    : mode === 'campaign' ? `Campaign · ${activeCampaign.name}`
+      : activeLegend ? `Legends archive · ${activeLegend.title}`
+        : 'Don’t break the build.';
+  const overlayTitle = mode === 'campaign' && won
+    ? 'Level complete!'
+    : mode === 'graph' && won ? 'You ate the whole year!'
+      : isNewBest ? 'New personal best!' : 'Game Over';
+  const overlaySub = won
+    ? mode === 'campaign' ? `${activeCampaign.name} cleared.` : 'Every contribution devoured.'
+    : causeLine ? `${causeLine} · ${modeLine}` : modeLine;
   showOverlay(ctx,
-    won ? 'You ate the whole year!' : isNewBest ? 'New personal best!' : 'Game Over',
-    won ? 'Every contribution devoured.' : causeLine ? `${causeLine} · ${modeLine}` : modeLine,
+    overlayTitle,
+    overlaySub,
     ['over-stats', 'over-actions', 'share-row', ...(canSubmit ? ['submit-row'] : [])]
   );
   $('share-native').hidden = !navigator.share;
   $('over-stats').innerHTML = statsHtml;
+  if (mode === 'campaign') {
+    const next = won ? nextCampaignLevel(activeCampaign.id) : null;
+    if (next) {
+      $('btn-again').textContent = 'Next level';
+      againAction = () => startCampaign(next.id);
+    } else if (won) {
+      $('btn-again').textContent = 'Campaign map';
+      againAction = showClassicScreen;
+    } else {
+      $('btn-again').textContent = 'Retry level';
+      const level = activeCampaign;
+      againAction = () => startRun('campaign', { campaign: level, unranked: true });
+    }
+  } else if (activeLegend) {
+    $('btn-again').textContent = 'Play again';
+    const legend = activeLegend;
+    againAction = () => startRun('graph', { legend, unranked: true });
+  } else {
+    $('btn-again').textContent = 'Play again';
+    const replayMode = mode;
+    againAction = () => startRun(replayMode);
+  }
   if (canSubmit) {
     $('name-input').value = localStorage.getItem('gh-snake-name') || '';
     $('btn-submit').disabled = false;
@@ -684,8 +1019,8 @@ function finishRun(won) {
     // the submit), so the async rank preview only runs without one.
     if (fieldPos == null) previewRank();
   }
-  const unlockedMsg = unlocked.length
-    ? ` Achievement${unlocked.length > 1 ? 's' : ''} unlocked: ${unlocked.map((a) => a.name).join(', ')}.`
+  const unlockedMsg = achievementUnlocks.length
+    ? ` Achievement${achievementUnlocks.length > 1 ? 's' : ''} unlocked: ${achievementUnlocks.map((a) => a.name).join(', ')}.`
     : '';
   const verdictMsg = rival && rival.finalScore != null
     ? (game.score > rival.finalScore
@@ -756,20 +1091,49 @@ function graphLbUser() {
   return graphData?.username || localStorage.getItem('gh-snake-user') || null;
 }
 
+const FRIENDS_KEY = 'gh-snake-friends';
+
+function loadFriends() {
+  try {
+    const names = JSON.parse(localStorage.getItem(FRIENDS_KEY) || '[]');
+    return Array.isArray(names) ? names.filter((name) => typeof name === 'string').slice(0, 12) : [];
+  } catch {
+    return [];
+  }
+}
+
+function friendBoardNames() {
+  const mine = localStorage.getItem('gh-snake-name');
+  return [...new Set([...loadFriends(), ...(mine ? [mine] : [])])].slice(0, 12);
+}
+
 async function renderLeaderboard(lbMode) {
   const el = $('leaderboard');
   el.hidden = false;
   el.innerHTML = '<div class="lb-empty">Loading…</div>';
+  const friendsOnly = lbMode === 'friends';
+  $('friends-row').hidden = !friendsOnly;
+  if (friendsOnly) {
+    $('friends-input').value = loadFriends().join(', ');
+    if (!friendBoardNames().length) {
+      el.innerHTML = '<div class="lb-empty">Add the leaderboard names your friends use. Your list stays in this browser.</div>';
+      return;
+    }
+  }
   try {
-    const day = lbMode === 'daily' ? new Date().toISOString().slice(0, 10) : undefined;
+    const queryMode = friendsOnly ? 'daily' : lbMode;
+    const day = queryMode === 'daily' ? new Date().toISOString().slice(0, 10) : undefined;
     const user = lbMode === 'graph' ? graphLbUser() : undefined;
-    const { entries, day: actualDay } = await api.getLeaderboard(lbMode, day, user);
+    const { entries, day: actualDay } = await api.getLeaderboard(
+      queryMode, day, user, friendsOnly ? friendBoardNames() : null);
     if (!entries.length) {
-      el.innerHTML = `<div class="lb-empty">No scores yet${lbMode === 'daily' ? ' today' : ''}${lbMode === 'graph' ? ` on @${escapeHtml(user)}'s graph` : ''}. Be the first!</div>`;
+      el.innerHTML = `<div class="lb-empty">${friendsOnly
+        ? 'No one in your friends list has submitted today yet.'
+        : `No scores yet${lbMode === 'daily' ? ' today' : ''}${lbMode === 'graph' ? ` on @${escapeHtml(user)}'s graph` : ''}. Be the first!`}</div>`;
       return;
     }
     // Today's daily runs share today's seed, so any of them can be raced live.
-    const raceable = lbMode === 'daily' && serverOk;
+    const raceable = queryMode === 'daily' && serverOk;
     // The all-time board mixes modes, so each row shows where the run came from.
     const showWhere = lbMode === 'all';
     const myName = localStorage.getItem('gh-snake-name');
@@ -784,7 +1148,10 @@ async function renderLeaderboard(lbMode) {
             title="Race this run" aria-label="Race ${escapeHtml(e.name)}'s run">${icons.race}</button>` : ''}
         ${e.replayId ? `<span class="lb-watch" aria-hidden="true">${icons.play}</span>` : ''}
       </div>`).join('');
-    if (lbMode === 'daily' && actualDay) {
+    if (friendsOnly && actualDay) {
+      el.insertAdjacentHTML('afterbegin',
+        `<div class="lb-empty">Friends · ${actualDay}<br><small>Matched by saved leaderboard name on this device.</small></div>`);
+    } else if (lbMode === 'daily' && actualDay) {
       el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Daily · ${actualDay}</div>`);
     } else if (lbMode === 'graph') {
       el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Graph · @${escapeHtml(user)}</div>`);
@@ -806,7 +1173,7 @@ function lbWhere(e) {
 }
 
 function setActiveTab(activeId) {
-  for (const id of ['lb-tab-all', 'lb-tab-daily', 'lb-tab-graph']) {
+  for (const id of ['lb-tab-all', 'lb-tab-daily', 'lb-tab-friends', 'lb-tab-graph']) {
     const btn = $(id);
     const on = id === activeId;
     btn.classList.toggle('active', on);
@@ -824,6 +1191,7 @@ function showLeaderboardScreen(initialTab = 'all') {
 
 function showStatsScreen() {
   const s = loadStats();
+  const progress = loadProgress();
   const avg = s.games ? Math.round(s.totalScore / s.games) : 0;
   const blocks = [
     [s.games, 'games played'],
@@ -832,6 +1200,8 @@ function showStatsScreen() {
     [s.bestStreak, 'best streak'],
     [s.dailiesPlayed, 'dailies played'],
     [s.dailyStreak, 'daily streak'],
+    [progress.dailyObjectives.length, 'daily objectives'],
+    [progress.campaignCompleted.length, 'campaign levels'],
   ];
   $('stats-panel').innerHTML = blocks.map(([n, label]) => `
     <div class="stat-block">
@@ -876,6 +1246,7 @@ function showAchievementsScreen() {
 async function startGraphRun() {
   const username = $('username-input').value.trim();
   if (!username) return;
+  activeLegend = null;
   $('overlay-sub').textContent = `Fetching @${username}'s contributions…`;
   state = 'loading';
   try {
@@ -926,8 +1297,10 @@ function currentShareCard() {
   return buildShareCard({
     game,
     theme,
+    cosmetics: renderer.cosmetics,
     modeLabel: MODE_LABELS[mode],
     username: mode === 'graph' ? graphData?.username : null,
+    year: activeLegend?.year || null,
   });
 }
 
@@ -936,9 +1309,17 @@ function currentShareContext() {
   // A verified run has a share page whose preview shows this exact board.
   const url = lastReplayId
     ? `${location.origin}/r/${lastReplayId}`
-    : gameUrl({ mode, username });
+    : gameUrl({ mode, username, year: activeLegend?.year || null });
   return {
-    text: shareText({ game, mode, day: session?.day, rank: lastRank, username }),
+    text: shareText({
+      game,
+      mode,
+      day: session?.day,
+      rank: lastRank,
+      username,
+      year: activeLegend?.year || null,
+      campaignName: activeCampaign?.name || null,
+    }),
     url,
     username,
   };
@@ -965,7 +1346,12 @@ async function shareToNetwork(network) {
 async function shareNative() {
   const { text, url, username } = currentShareContext();
   const canvas = buildShareCard({
-    game, theme, modeLabel: MODE_LABELS[mode], username,
+    game,
+    theme,
+    cosmetics: renderer.cosmetics,
+    modeLabel: MODE_LABELS[mode],
+    username,
+    year: activeLegend?.year || null,
   });
   const ok = await nativeShare({ text, url, canvas });
   if (!ok) copyResult(); // fall back to clipboard
@@ -985,7 +1371,8 @@ document.addEventListener('keydown', (e) => {
     if (state === 'paused') { resumeGame(); return; }
     // Back out of a secondary menu panel to the start screen.
     if (state === 'idle' && (!$('leaderboard').hidden || !$('stats-panel').hidden
-        || !$('achievements-panel').hidden)) {
+        || !$('achievements-panel').hidden || !$('cosmetics-panel').hidden
+        || !$('classic-hub').hidden)) {
       showStartScreen();
       return;
     }
@@ -1002,7 +1389,7 @@ document.addEventListener('keydown', (e) => {
       && document.activeElement?.tagName !== 'INPUT') {
     e.preventDefault();
     audio.unlock();
-    startRun(mode);
+    if (againAction) againAction();
     return;
   }
   const d = KEY_DIRS[e.key];
@@ -1092,7 +1479,17 @@ canvas.addEventListener('touchend', (e) => {
 // --- button wiring ---
 $('pause-btn').addEventListener('click', togglePause);
 $('btn-resume').addEventListener('click', resumeGame);
-$('btn-classic').addEventListener('click', () => { audio.unlock(); startRun('classic'); });
+$('btn-classic').addEventListener('click', showClassicScreen);
+$('btn-endless').addEventListener('click', () => { audio.unlock(); startRun('classic'); });
+$('classic-back').addEventListener('click', showStartScreen);
+$('campaign-list').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-campaign]');
+  if (card) startCampaign(card.dataset.campaign);
+});
+$('legends-list').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-legend]');
+  if (card) { audio.unlock(); startLegend(card.dataset.legend); }
+});
 $('btn-daily').addEventListener('click', () => { audio.unlock(); startRun('daily'); });
 $('btn-graph').addEventListener('click', () => {
   $('user-row').hidden = false;
@@ -1100,7 +1497,9 @@ $('btn-graph').addEventListener('click', () => {
   $('username-input').focus();
 });
 $('user-row').addEventListener('submit', (e) => { e.preventDefault(); audio.unlock(); startGraphRun(); });
-$('btn-again').addEventListener('click', () => startRun(mode));
+$('btn-again').addEventListener('click', () => {
+  if (againAction) againAction();
+});
 $('btn-menu').addEventListener('click', showStartScreen);
 $('home-link').setAttribute('href', import.meta.env.BASE_URL || '/');
 $('home-link').addEventListener('click', goHome);
@@ -1114,7 +1513,19 @@ $('submit-row').addEventListener('submit', (e) => { e.preventDefault(); handleSu
 $('btn-leaderboard').addEventListener('click', () => showLeaderboardScreen());
 $('lb-tab-all').addEventListener('click', () => { setActiveTab('lb-tab-all'); renderLeaderboard('all'); });
 $('lb-tab-daily').addEventListener('click', () => { setActiveTab('lb-tab-daily'); renderLeaderboard('daily'); });
+$('lb-tab-friends').addEventListener('click', () => {
+  setActiveTab('lb-tab-friends');
+  renderLeaderboard('friends');
+});
 $('lb-tab-graph').addEventListener('click', () => { setActiveTab('lb-tab-graph'); renderLeaderboard('graph'); });
+$('friends-row').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const names = [...new Set($('friends-input').value.split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0 && name.length <= 20))].slice(0, 12);
+  localStorage.setItem(FRIENDS_KEY, JSON.stringify(names));
+  renderLeaderboard('friends');
+});
 $('lb-back').addEventListener('click', showStartScreen);
 $('btn-watch-best').addEventListener('click', () => watchLocalBest(ctx));
 $('btn-watch-shared').addEventListener('click', () => {
@@ -1125,6 +1536,16 @@ $('btn-stats').addEventListener('click', showStatsScreen);
 $('stats-back').addEventListener('click', showStartScreen);
 $('btn-achievements').addEventListener('click', showAchievementsScreen);
 $('achievements-back').addEventListener('click', showStartScreen);
+$('btn-locker').addEventListener('click', showCosmeticsScreen);
+$('cosmetics-back').addEventListener('click', showStartScreen);
+$('cosmetics-panel').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-cosmetic]');
+  if (!card) return;
+  if (!selectCosmetic(card.dataset.cosmeticKind, card.dataset.cosmetic, loadStats())) return;
+  applyLoadout();
+  showCosmeticsScreen();
+  if (game) draw(renderer, game, null, 1, { monthLabels, ghosts });
+});
 $('var-wrap').addEventListener('change', (e) => {
   localStorage.setItem('gh-snake-var-wrap', e.target.checked ? '1' : '0');
   updateVariantNote();
@@ -1273,6 +1694,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
   document.querySelectorAll('.touch-btn[data-dir]').forEach((btn) => {
     btn.innerHTML = [icons.up, icons.right, icons.down, icons.left][btn.dataset.dir];
   });
+  applyLoadout();
 
   // Draw an idle classic board behind the start overlay.
   game = createGame({ mode: 'classic', seed: randomSeed() });
@@ -1293,7 +1715,14 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
     return;
   }
   const linkedUser = params.get('user');
-  if (linkedUser && /^[a-zA-Z0-9-]{1,39}$/.test(linkedUser) && serverOk) {
+  const linkedLegend = LEGENDS.find((legend) =>
+    legend.username.toLowerCase() === params.get('legend')?.toLowerCase()
+    && String(legend.year) === params.get('year'));
+  if (linkedLegend && serverOk) {
+    showClassicScreen();
+    $('overlay-sub').textContent = `${linkedLegend.title} is waiting in the Legends archive.`;
+    $(`legends-list`).querySelector(`[data-legend="${linkedLegend.id}"]`)?.focus();
+  } else if (linkedUser && /^[a-zA-Z0-9-]{1,39}$/.test(linkedUser) && serverOk) {
     $('user-row').hidden = false;
     $('username-input').value = linkedUser;
     $('overlay-sub').textContent = `You've been challenged: eat @${linkedUser}'s year.`;

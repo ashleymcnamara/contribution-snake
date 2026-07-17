@@ -24,11 +24,25 @@ export function isValidUsername(name) {
   return typeof name === 'string' && USERNAME_RE.test(name);
 }
 
-async function fetchViaGraphQL(username, token) {
+export function isValidContributionYear(year) {
+  const value = Number(year);
+  return Number.isInteger(value) && value >= 2008 && value <= new Date().getUTCFullYear();
+}
+
+function yearRange(year) {
+  if (!year) return null;
+  return {
+    from: `${year}-01-01T00:00:00Z`,
+    to: `${year}-12-31T23:59:59Z`,
+  };
+}
+
+async function fetchViaGraphQL(username, token, year) {
+  const range = yearRange(year);
   const query = `
-    query($login: String!) {
+    query($login: String!${range ? ', $from: DateTime!, $to: DateTime!' : ''}) {
       user(login: $login) {
-        contributionsCollection {
+        contributionsCollection${range ? '(from: $from, to: $to)' : ''} {
           contributionCalendar {
             totalContributions
             weeks {
@@ -45,7 +59,7 @@ async function fetchViaGraphQL(username, token) {
       'Content-Type': 'application/json',
       'User-Agent': 'gitsnake',
     },
-    body: JSON.stringify({ query, variables: { login: username } }),
+    body: JSON.stringify({ query, variables: { login: username, ...(range || {}) } }),
   });
   if (!res.ok) throw new Error(`GitHub API error (${res.status})`);
   const json = await res.json();
@@ -61,8 +75,13 @@ async function fetchViaGraphQL(username, token) {
   return { days, total: calendar.totalContributions, source: 'graphql' };
 }
 
-async function fetchViaScrape(username) {
-  const res = await fetch(`https://github.com/users/${username}/contributions`, {
+async function fetchViaScrape(username, year) {
+  const url = new URL(`https://github.com/users/${username}/contributions`);
+  if (year) {
+    url.searchParams.set('from', `${year}-01-01`);
+    url.searchParams.set('to', `${year}-12-31`);
+  }
+  const res = await fetch(url, {
     headers: { 'User-Agent': 'gitsnake' },
   });
   if (res.status === 404) throw new Error('GitHub user not found');
@@ -82,21 +101,21 @@ async function fetchViaScrape(username) {
   return { days, total: null, source: 'scrape' };
 }
 
-export function fetchContributionDays(username, token) {
+export function fetchContributionDays(username, token, year = null) {
   // Test-only escape hatch: the real fetchers hit GitHub (GraphQL or the public
   // calendar page), which e2e can't depend on. When SNAKE_FAKE_CONTRIBS is set,
   // return a deterministic synthetic year for any username so graph mode can be
   // exercised offline. Never set this in production.
-  if (process.env.SNAKE_FAKE_CONTRIBS) return Promise.resolve(fakeContributionDays());
-  return token ? fetchViaGraphQL(username, token) : fetchViaScrape(username);
+  if (process.env.SNAKE_FAKE_CONTRIBS) return Promise.resolve(fakeContributionDays(year));
+  return token ? fetchViaGraphQL(username, token, year) : fetchViaScrape(username, year);
 }
 
 // A fixed 52-week calendar with a mix of levels 0-4, matching the { date, level }
 // shape of the real fetchers. Deterministic (LCG + a fixed end date) so the same
 // grid is served for both session creation and replay validation. TEST ONLY.
-function fakeContributionDays() {
+function fakeContributionDays(year = null) {
   const days = [];
-  const end = new Date('2024-12-31T00:00:00Z');
+  const end = new Date(`${year || 2024}-12-31T00:00:00Z`);
   let s = 1234567;
   for (let i = 52 * 7 - 1; i >= 0; i--) {
     const d = new Date(end);

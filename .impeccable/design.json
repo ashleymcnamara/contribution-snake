@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-17T21:10:00Z",
+  "title": "Design System: GitSnake",
+  "extensions": {
+    "colorMeta": {
+      "contribution-green": {
+        "role": "primary",
+        "displayName": "Contribution Green",
+        "canonical": "#39d353",
+        "tonalRamp": ["#071d0b", "#0e4429", "#006d32", "#17933a", "#26a641", "#39d353", "#78e58a", "#c8f6cf"]
+      },
+      "canvas-black": {
+        "role": "neutral",
+        "displayName": "Canvas Black",
+        "canonical": "#0d1117",
+        "tonalRamp": ["#05070a", "#0d1117", "#161b22", "#21262d", "#30363d", "#57606a", "#8b949e", "#e6edf3"]
+      },
+      "commit-gold": {
+        "role": "tertiary",
+        "displayName": "Commit Gold",
+        "canonical": "#e3b341",
+        "tonalRamp": ["#201804", "#4c3605", "#785608", "#a77812", "#bf8700", "#e3b341", "#f0cf72", "#fbefbd"]
+      },
+      "power-purple": {
+        "role": "tertiary",
+        "displayName": "Power Purple",
+        "canonical": "#a371f7",
+        "tonalRamp": ["#1c0f33", "#35205f", "#553098", "#7542c8", "#8957e5", "#a371f7", "#c5a5ff", "#eadcff"]
+      },
+      "focus-blue": {
+        "role": "secondary",
+        "displayName": "Focus Blue",
+        "canonical": "#58a6ff",
+        "tonalRamp": ["#06172c", "#0c2d6b", "#1158c7", "#0969da", "#388bfd", "#58a6ff", "#9ecbff", "#dff0ff"]
+      },
+      "danger-coral": {
+        "role": "tertiary",
+        "displayName": "Danger Coral",
+        "canonical": "#ff7b72",
+        "tonalRamp": ["#260605", "#5a1210", "#8b2c2a", "#b62324", "#da3633", "#ff7b72", "#ffb3ad", "#ffe3e1"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Brand Display",
+        "purpose": "GitSnake wordmark, countdown, and rare game-scale moments."
+      },
+      "headline": {
+        "displayName": "Overlay Headline",
+        "purpose": "Terminal-state and secondary-screen titles."
+      },
+      "body": {
+        "displayName": "Product Body",
+        "purpose": "Controls, explanations, verdicts, and utility copy."
+      },
+      "label": {
+        "displayName": "Gameplay Label",
+        "purpose": "HUD, metadata, status, and compact supporting text."
+      }
+    },
+    "shadows": [
+      {
+        "name": "board-outline",
+        "value": "0 0 0 1px rgba(240, 246, 252, 0.04)",
+        "purpose": "Crisp dark-mode separation around the canvas wrapper."
+      },
+      {
+        "name": "toast-lift",
+        "value": "0 6px 24px rgba(0, 0, 0, 0.28)",
+        "purpose": "Temporary achievement and cosmetic-unlock feedback."
+      },
+      {
+        "name": "countdown-glow",
+        "value": "0 2px 24px rgba(0, 0, 0, 0.45)",
+        "purpose": "Keeps the oversized countdown readable over the board."
+      }
+    ],
+    "motion": [
+      {
+        "name": "press",
+        "value": "60ms ease",
+        "purpose": "Immediate scale feedback on button activation."
+      },
+      {
+        "name": "state",
+        "value": "150ms ease",
+        "purpose": "Hover, selected, progress, and color state transitions."
+      },
+      {
+        "name": "feedback",
+        "value": "250ms ease-out",
+        "purpose": "Toast entry and short-lived gameplay feedback."
+      },
+      {
+        "name": "countdown",
+        "value": "500ms ease-out",
+        "purpose": "Single-beat countdown pop; disabled under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "brand-compact",
+        "value": "430px"
+      },
+      {
+        "name": "layout-compact",
+        "value": "640px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single clear action at a decision point.",
+      "html": "<button class=\"ds-btn-primary\">Play</button>",
+      "css": ".ds-btn-primary { background:#238636; color:#fff; border:1px solid rgba(240,246,252,.1); border-radius:6px; padding:8px 20px; font:500 14px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif; cursor:pointer; transition:background .15s,transform .06s ease; } .ds-btn-primary:hover { background:#2ea043; } .ds-btn-primary:active { transform:scale(.97); } .ds-btn-primary:focus-visible { outline:2px solid #58a6ff; outline-offset:2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A restrained alternate action that stays subordinate to play.",
+      "html": "<button class=\"ds-btn-secondary\">Daily challenge</button>",
+      "css": ".ds-btn-secondary { background:#161b22; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:8px 20px; font:500 14px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif; cursor:pointer; transition:background .15s,transform .06s ease; } .ds-btn-secondary:hover { background:#30363d; } .ds-btn-secondary:active { transform:scale(.97); } .ds-btn-secondary:focus-visible { outline:2px solid #58a6ff; outline-offset:2px; }"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "icon-button",
+      "description": "Compact square control for persistent app-level actions.",
+      "html": "<button class=\"ds-icon-button\" aria-label=\"Toggle theme\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/></svg></button>",
+      "css": ".ds-icon-button { display:grid; place-items:center; width:30px; height:30px; padding:0; background:#161b22; color:#e6edf3; border:1px solid #30363d; border-radius:6px; cursor:pointer; transition:transform .06s ease,filter .1s; } .ds-icon-button svg { width:14px; height:14px; } .ds-icon-button:hover { filter:brightness(1.25); } .ds-icon-button:active { background:#30363d; transform:scale(.9); } .ds-icon-button:focus-visible { outline:2px solid #58a6ff; outline-offset:2px; }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Familiar single-line field for GitHub usernames and leaderboard names.",
+      "html": "<input class=\"ds-input\" placeholder=\"GitHub username\" aria-label=\"GitHub username\">",
+      "css": ".ds-input { width:190px; background:#161b22; border:1px solid #30363d; border-radius:6px; color:#e6edf3; padding:8px 12px; font:400 16px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif; } .ds-input::placeholder { color:#8b949e; opacity:1; } .ds-input:focus-visible { outline:2px solid #58a6ff; outline-offset:-1px; } .ds-input:disabled { opacity:.55; cursor:not-allowed; }"
+    },
+    {
+      "name": "Mode Choice",
+      "kind": "card",
+      "description": "An independently selectable campaign, archive, or cosmetic item.",
+      "html": "<button class=\"ds-mode-choice\"><strong>Merge Queue</strong><span>8 commits</span><small>Thread two review lanes without blocking the queue.</small></button>",
+      "css": ".ds-mode-choice { display:flex; flex-direction:column; gap:3px; width:240px; padding:9px 11px; background:#161b22; color:#e6edf3; border:1px solid #30363d; border-radius:8px; text-align:left; font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif; cursor:pointer; } .ds-mode-choice strong { font-size:13px; } .ds-mode-choice span { color:#39d353; font-size:11px; } .ds-mode-choice small { color:#8b949e; font-size:11px; line-height:1.3; } .ds-mode-choice:hover { border-color:#2f8542; background:#17251c; } .ds-mode-choice:focus-visible { outline:2px solid #58a6ff; outline-offset:2px; }"
+    },
+    {
+      "name": "Gameplay Status",
+      "kind": "chip",
+      "refersTo": "status-pill",
+      "description": "A compact live state label for race position or active power-ups.",
+      "html": "<span class=\"ds-status\">P1 · 11 racers</span>",
+      "css": ".ds-status { display:inline-block; padding:2px 10px; border:1px solid #476d50; border-radius:999px; background:#161b22; color:#39d353; font:500 12px -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif; font-variant-numeric:tabular-nums; white-space:nowrap; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Living Contribution Graph",
+    "overview": "GitSnake should feel as though the familiar GitHub contribution calendar woke up, grew a face, and invited the player in. The board is the visual protagonist; menus, controls, progress, and social features form a compact frame around it. The interface is playful through behavior rather than decoration, while product chrome stays polished, quiet, and immediately familiar.",
+    "keyCharacteristics": [
+      "The contribution graph is always the strongest visual element.",
+      "Controls are compact, familiar, and quietly tactile.",
+      "Information density is high but hierarchy remains immediate.",
+      "Green indicates contribution activity, primary action, progress, or success—not decoration.",
+      "Motion communicates meaningful gameplay and state changes."
+    ],
+    "rules": [
+      {
+        "name": "The Contribution Signal Rule",
+        "body": "Contribution Green is functional. If a green element does not represent action, progress, contribution density, selection, or success, remove the green.",
+        "section": "colors"
+      },
+      {
+        "name": "The Meaning Survives Color Rule",
+        "body": "Every state represented by color must also have shape, position, text, iconography, or motion support.",
+        "section": "colors"
+      },
+      {
+        "name": "The Gameplay Type Rule",
+        "body": "Typography must never become louder than the board during active play.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-at-Rest Rule",
+        "body": "Persistent surfaces never use ambient drop shadows.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do let the contribution board remain the strongest visual element on every gameplay screen.",
+      "Do use Contribution Green only for action, progress, contribution density, selection, or success.",
+      "Do preserve complete keyboard operation, reduced-motion alternatives, and colorblind-safe semantics.",
+      "Do reveal complexity progressively instead of crowding the first decision."
+    ],
+    "donts": [
+      "Don't resemble a generic AI-generated SaaS dashboard.",
+      "Don't introduce overstimulating arcade clutter, novelty-terminal cosplay, or a literal reproduction of GitHub's interface.",
+      "Don't add gradient text, decorative glassmorphism, ambient shadows on persistent surfaces, or green decoration without state meaning.",
+      "Don't rely on color alone for gameplay or progression state."
+    ]
+  }
+}

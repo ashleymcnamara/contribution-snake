@@ -2,6 +2,7 @@
 // replay validator. Everything in here must be a pure function of the seed
 // and the input log: no Math.random, no Date.now, no DOM.
 import { mulberry32 } from './rng.js';
+import { dailyBriefFor } from './daily.js';
 
 export const DIRS = [
   { x: 0, y: -1 }, // 0 up
@@ -36,7 +37,10 @@ export const MAX_REPLAY_STEPS = 100000;
 //        speed it spawned at, instead of a fixed step count. Fixed steps gave
 //        7.2s of thinking time at level 1 but only 3s at top speed — exactly
 //        backwards for difficulty.
-export const CURRENT_RULES = 3;
+//   v4 — deterministic Daily briefs and Classic power-ups. Rebase rewinds
+//        movement only, preserving logical time and RNG state so replay input
+//        indices remain monotonic.
+export const CURRENT_RULES = 4;
 
 // Golden commits (rules >= 2, classic/daily only): every GOLDEN_EVERY-th
 // normal food spawns a bonus cell worth GOLDEN_POINTS base points that
@@ -55,9 +59,18 @@ export const ROTTEN_EVERY = 3;
 export const ROTTEN_TTL = 80;
 export const ROTTEN_PENALTY = 25;
 
+// Ranked Classic power-ups (rules >= 4). They are deterministic, so the server
+// can replay them exactly like food and golden commits.
+export const POWERUP_EVERY = 4;
+export const POWERUP_TTL = 90;
+export const FORK_TTL = 60;
+export const REBASE_TIME_MS = 3000;
+const MAX_REBASE_HISTORY = 120;
+const POWERUP_TYPES = ['rebase', 'fork', 'squash'];
+
 /**
  * @typedef {Object} GameState
- * @property {'classic'|'daily'|'graph'} mode
+ * @property {'classic'|'daily'|'graph'|'campaign'} mode
  * @property {number} cols  @property {number} rows
  * @property {() => number} rng  Seeded PRNG — the only randomness source.
  * @property {number} seed
@@ -80,6 +93,9 @@ export const ROTTEN_PENALTY = 25;
  * @property {number} stepCount  @property {number} stepsSinceFood
  * @property {number} elapsedGameMs  Minimum wall-clock ms this run must have
  *   taken (sum of per-step speeds) — used by the server's pacing check.
+ * @property {Set<string>} walls  Campaign obstacle cells.
+ * @property {{x:number,y:number,type:string,ttl:number}|null} powerUp
+ * @property {number} rebaseCharges  @property {number} forkTicks
  * @property {boolean} alive  @property {boolean} won
  */
 
@@ -101,6 +117,7 @@ export function boardSize(mode) {
 export function createGame({
   mode = 'classic', seed = 1, graph = null,
   wrap = false, speedFactor = 1, rotten = false, rules = CURRENT_RULES,
+  day = null, walls = null, targetFood = 0, campaignId = null,
 }) {
   const { cols, rows } = boardSize(mode);
   const startX = Math.floor(cols / 2);
@@ -110,8 +127,20 @@ export function createGame({
     snake.push({ x: startX - i, y: startY });
   }
 
+  const dailyBrief = mode === 'daily' ? dailyBriefFor(day || String(seed), rules) : null;
+  const effectiveSpeedFactor = speedFactor * (dailyBrief?.speedFactor || 1);
+  const wallSet = new Set();
+  const snakeCells = new Set(snake.map((s) => `${s.x},${s.y}`));
+  for (const wall of walls || []) {
+    if (!Number.isInteger(wall?.x) || !Number.isInteger(wall?.y)) continue;
+    if (wall.x < 0 || wall.x >= cols || wall.y < 0 || wall.y >= rows) continue;
+    const key = `${wall.x},${wall.y}`;
+    if (!snakeCells.has(key)) wallSet.add(key);
+  }
+
   const state = {
     mode,
+    day,
     cols,
     rows,
     rng: mulberry32(seed),
@@ -136,7 +165,18 @@ export function createGame({
     level: 1,
     wrap,
     speedFactor,
-    speed: BASE_SPEED * speedFactor,
+    effectiveSpeedFactor,
+    speed: BASE_SPEED * effectiveSpeedFactor,
+    dailyBrief,
+    walls: wallSet,
+    targetFood: Math.max(0, Number(targetFood) || 0),
+    campaignId,
+    powerUpsEnabled: rules >= 4 && (mode === 'classic' || mode === 'campaign'),
+    powerUp: null,
+    powerUpsCollected: { rebase: 0, fork: 0, squash: 0 },
+    rebaseCharges: 0,
+    forkTicks: 0,
+    positionHistory: [],
     stepCount: 0,
     stepsSinceFood: 0,
     elapsedGameMs: 0,
@@ -164,8 +204,10 @@ export function createGame({
 
 function placeFood(state) {
   const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  for (const key of state.walls) occupied.add(key);
   if (state.golden) occupied.add(`${state.golden.x},${state.golden.y}`);
   if (state.rotten) occupied.add(`${state.rotten.x},${state.rotten.y}`);
+  if (state.powerUp) occupied.add(`${state.powerUp.x},${state.powerUp.y}`);
   let pos;
   do {
     pos = {
@@ -181,13 +223,16 @@ function placeFood(state) {
 // replays reproduce exactly.
 function goldenTtlFor(state) {
   if (state.rules < 3) return GOLDEN_TTL;
-  return Math.max(GOLDEN_MIN_TTL, Math.round(GOLDEN_TIME_MS / state.speed));
+  const factor = state.dailyBrief?.goldenTtlFactor || 1;
+  return Math.max(GOLDEN_MIN_TTL, Math.round((GOLDEN_TIME_MS * factor) / state.speed));
 }
 
 function placeGolden(state) {
   const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  for (const key of state.walls) occupied.add(key);
   occupied.add(`${state.food.x},${state.food.y}`);
   if (state.rotten) occupied.add(`${state.rotten.x},${state.rotten.y}`);
+  if (state.powerUp) occupied.add(`${state.powerUp.x},${state.powerUp.y}`);
   let pos;
   do {
     pos = {
@@ -200,8 +245,10 @@ function placeGolden(state) {
 
 function placeRotten(state) {
   const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  for (const key of state.walls) occupied.add(key);
   if (state.food) occupied.add(`${state.food.x},${state.food.y}`);
   if (state.golden) occupied.add(`${state.golden.x},${state.golden.y}`);
+  if (state.powerUp) occupied.add(`${state.powerUp.x},${state.powerUp.y}`);
   // Graph mode: hazards only land on empty (already-eaten or blank) cells.
   if (state.cells) for (const key of state.cells.keys()) occupied.add(key);
   // Defensive: a nearly-full board has nowhere safe to put a hazard.
@@ -214,6 +261,23 @@ function placeRotten(state) {
     };
   } while (occupied.has(`${pos.x},${pos.y}`));
   state.rotten = { ...pos, ttl: ROTTEN_TTL };
+}
+
+function placePowerUp(state) {
+  const occupied = new Set(state.snake.map((s) => `${s.x},${s.y}`));
+  for (const key of state.walls) occupied.add(key);
+  if (state.food) occupied.add(`${state.food.x},${state.food.y}`);
+  if (state.golden) occupied.add(`${state.golden.x},${state.golden.y}`);
+  if (state.rotten) occupied.add(`${state.rotten.x},${state.rotten.y}`);
+  let pos;
+  do {
+    pos = {
+      x: Math.floor(state.rng() * state.cols),
+      y: Math.floor(state.rng() * state.rows),
+    };
+  } while (occupied.has(`${pos.x},${pos.y}`));
+  const type = POWERUP_TYPES[Math.floor(state.rng() * POWERUP_TYPES.length)];
+  state.powerUp = { ...pos, type, ttl: POWERUP_TTL };
 }
 
 // Validated direction queue — prevents 180° reversals from fast key presses.
@@ -232,14 +296,18 @@ export function queueInput(state, d, log = true) {
 }
 
 function onEat(state, basePoints) {
-  if (state.stepsSinceFood <= STREAK_WINDOW) {
+  const streakWindow = state.dailyBrief?.streakWindow || STREAK_WINDOW;
+  if (state.stepsSinceFood <= streakWindow) {
     state.streak++;
   } else {
     state.streak = 1;
   }
   state.bestStreak = Math.max(state.bestStreak, state.streak);
-  state.multiplier = 1 + Math.floor(state.streak / 3) * 0.5;
-  const points = Math.ceil(basePoints * state.multiplier);
+  const multiplierStep = state.dailyBrief?.multiplierStep || 0.5;
+  state.multiplier = 1 + Math.floor(state.streak / 3) * multiplierStep;
+  const scoreFactor = state.dailyBrief?.scoreFactor || 1;
+  const forkFactor = state.forkTicks > 0 ? 2 : 1;
+  const points = Math.ceil(basePoints * state.multiplier * scoreFactor * forkFactor);
   state.score += points;
   state.stepsSinceFood = 0;
 
@@ -247,7 +315,8 @@ function onEat(state, basePoints) {
   let levelUp = false;
   if (newLevel > state.level) {
     state.level = newLevel;
-    state.speed = Math.max(MIN_SPEED, BASE_SPEED - (state.level - 1) * 8) * state.speedFactor;
+    state.speed = Math.max(MIN_SPEED, BASE_SPEED - (state.level - 1) * 8)
+      * state.effectiveSpeedFactor;
     levelUp = true;
   }
   return { points, levelUp };
@@ -260,16 +329,67 @@ function onEat(state, basePoints) {
 // it to progress paces every graph, dense or sparse, from calm to a fast finish
 // (top speed over the final ~10% of cells).
 function graphLevelFrom(state) {
-  if (state.mode !== 'graph') return Math.floor(state.score / 50) + 1;
+  if (state.mode !== 'graph') {
+    const levelEvery = state.dailyBrief?.levelEvery || 50;
+    return Math.floor(state.score / levelEvery) + 1;
+  }
   if (!state.totalCells) return SPEED_LEVELS;
   const cleared = (state.totalCells - state.cells.size) / state.totalCells;
   return Math.min(SPEED_LEVELS, Math.floor(cleared * SPEED_LEVELS) + 1);
+}
+
+function rememberPosition(state) {
+  if (!state.powerUpsEnabled) return;
+  state.positionHistory.push({
+    snake: state.snake.map((segment) => ({ ...segment })),
+    dir: state.dir,
+    elapsedGameMs: state.elapsedGameMs,
+  });
+  if (state.positionHistory.length > MAX_REBASE_HISTORY) state.positionHistory.shift();
+}
+
+function resolveCollision(state, cause) {
+  if (state.rebaseCharges > 0 && state.positionHistory.length) {
+    const targetTime = state.elapsedGameMs - REBASE_TIME_MS;
+    let index = 0;
+    for (let i = 0; i < state.positionHistory.length; i++) {
+      if (state.positionHistory[i].elapsedGameMs <= targetTime) index = i;
+      else break;
+    }
+    const snapshot = state.positionHistory[index];
+    state.snake = snapshot.snake.map((segment) => ({ ...segment }));
+    state.dir = snapshot.dir;
+    state.queue = [];
+    state.rebaseCharges--;
+    state.positionHistory = state.positionHistory.slice(0, index + 1);
+    state.stepsSinceFood++;
+    return { rebased: true, cause, head: { ...state.snake[0] } };
+  }
+  state.alive = false;
+  return { died: true, cause };
+}
+
+function collectPowerUp(state, type) {
+  state.powerUpsCollected[type]++;
+  if (type === 'rebase') {
+    state.rebaseCharges = Math.min(2, state.rebaseCharges + 1);
+    return { charges: state.rebaseCharges };
+  }
+  if (type === 'fork') {
+    state.forkTicks = FORK_TTL;
+    return { ticks: state.forkTicks };
+  }
+  const before = state.snake.length;
+  const keep = Math.max(START_LENGTH, Math.ceil(before * 0.6));
+  state.snake.splice(keep);
+  return { squashed: before - state.snake.length };
 }
 
 // Advance one tick. Returns an event object the UI uses for effects/sound.
 export function step(state) {
   if (!state.alive || state.won) return { done: true };
 
+  rememberPosition(state);
   if (state.queue.length) state.dir = state.queue.shift();
   const dir = DIRS[state.dir];
   const head = { x: state.snake[0].x + dir.x, y: state.snake[0].y + dir.y };
@@ -281,6 +401,8 @@ export function step(state) {
   // all see the same post-expiry board.
   if (state.golden && --state.golden.ttl <= 0) state.golden = null;
   if (state.rotten && --state.rotten.ttl <= 0) state.rotten = null;
+  if (state.powerUp && --state.powerUp.ttl <= 0) state.powerUp = null;
+  if (state.forkTicks > 0) state.forkTicks--;
 
   // Wall collision (or wrap-around in the variant)
   if (head.x < 0 || head.x >= state.cols || head.y < 0 || head.y >= state.rows) {
@@ -288,8 +410,7 @@ export function step(state) {
       head.x = (head.x + state.cols) % state.cols;
       head.y = (head.y + state.rows) % state.rows;
     } else {
-      state.alive = false;
-      return { died: true, cause: 'wall' };
+      return resolveCollision(state, 'wall');
     }
   }
 
@@ -297,6 +418,7 @@ export function step(state) {
   // rules the head may slide into the cell the tail is vacating, which is
   // only safe when the snake doesn't grow (i.e. doesn't eat) this step.
   const headKey = `${head.x},${head.y}`;
+  if (state.walls.has(headKey)) return resolveCollision(state, 'obstacle');
   const willEat = state.mode === 'graph'
     ? state.cells.has(headKey)
     : (head.x === state.food.x && head.y === state.food.y)
@@ -308,12 +430,20 @@ export function step(state) {
     if (tailPasses && i === state.snake.length - 1) break;
     const seg = state.snake[i];
     if (seg.x === head.x && seg.y === head.y) {
-      state.alive = false;
-      return { died: true, cause: 'self' };
+      return resolveCollision(state, 'self');
     }
   }
 
   state.snake.unshift(head);
+
+  if (state.powerUp && head.x === state.powerUp.x && head.y === state.powerUp.y) {
+    const type = state.powerUp.type;
+    state.powerUp = null;
+    state.snake.pop();
+    const result = collectPowerUp(state, type);
+    state.stepsSinceFood++;
+    return { head, powerUp: type, ...result };
+  }
 
   let ate = false;
   let golden = false;
@@ -335,8 +465,13 @@ export function step(state) {
     eatEvent = onEat(state, 10);
     ate = true;
     state.foodEaten++;
+    if (state.targetFood && state.foodEaten >= state.targetFood) {
+      state.won = true;
+      return { ate, ...eatEvent, won: true, head };
+    }
     placeFood(state);
-    if (state.rules >= 2 && !state.golden && state.foodEaten % GOLDEN_EVERY === 0) {
+    const goldenEvery = state.dailyBrief?.goldenEvery || GOLDEN_EVERY;
+    if (state.rules >= 2 && !state.golden && state.foodEaten % goldenEvery === 0) {
       placeGolden(state);
       goldenSpawned = true;
     }
@@ -354,7 +489,14 @@ export function step(state) {
     placeRotten(state);
   }
 
-  if (ate) return { ate, golden, goldenSpawned, ...eatEvent, head };
+  let powerUpSpawned = false;
+  if (ate && !golden && state.powerUpsEnabled && !state.powerUp && state.foodEaten > 0
+      && state.foodEaten % POWERUP_EVERY === 0) {
+    placePowerUp(state);
+    powerUpSpawned = true;
+  }
+
+  if (ate) return { ate, golden, goldenSpawned, powerUpSpawned, ...eatEvent, head };
 
   // Hazard hit: not food, so the snake doesn't grow — it just pays for it.
   let rotten = false;
@@ -375,8 +517,8 @@ export function step(state) {
 // and return the final state. A legitimate submission ends in death or (graph
 // mode) a win. Pass the rules the run was recorded under so old logs replay
 // to their original outcome.
-export function replayGame({ mode, seed, graph, rules = 1 }, inputLog) {
-  const state = createGame({ mode, seed, graph, rules });
+export function replayGame({ mode, seed, graph, rules = 1, day = null }, inputLog) {
+  const state = createGame({ mode, seed, graph, rules, day });
   let i = 0;
   while (state.alive && !state.won && state.stepCount < MAX_REPLAY_STEPS) {
     while (i < inputLog.length && inputLog[i].s === state.stepCount) {

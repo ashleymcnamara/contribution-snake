@@ -3,7 +3,9 @@
 // in tests) and returns { status, body } for the adapter to serialize.
 import { createHash, randomUUID, randomInt } from 'node:crypto';
 import { replayGame, validateInputLog, CURRENT_RULES } from '../src/game/core.js';
-import { fetchContributionDays, toGrid, isValidUsername } from './github.js';
+import {
+  fetchContributionDays, toGrid, isValidUsername, isValidContributionYear,
+} from './github.js';
 import { renderOgImage } from './ogimage.js';
 import { renderSharePage } from './sharepage.js';
 
@@ -61,25 +63,32 @@ export function health() {
   return { status: 200, body: { ok: true, day: todayUTC() } };
 }
 
-async function fetchContribPayload(store, username) {
-  const key = username.toLowerCase();
-  const cached = await store.getContribCache(key);
+async function fetchContribPayload(store, username, year = null) {
+  const key = `${username.toLowerCase()}:${year || 'current'}`;
+  // Fall back to the pre-archive cache key for current-year entries so an
+  // upgrade does not discard warm production caches.
+  const cached = await store.getContribCache(key)
+    || (!year ? await store.getContribCache(username.toLowerCase()) : null);
   if (cached && Date.now() - cached.fetchedAt < CONTRIB_TTL_MS) {
     return cached.payload;
   }
-  const raw = await fetchContributionDays(username, process.env.GITHUB_TOKEN);
+  const raw = await fetchContributionDays(username, process.env.GITHUB_TOKEN, year);
   const { grid, months } = toGrid(raw.days);
-  const payload = { username, grid, months, total: raw.total, source: raw.source };
+  const payload = { username, year, grid, months, total: raw.total, source: raw.source };
   await store.setContribCache(key, payload, Date.now());
   return payload;
 }
 
-export async function contributions(store, username) {
+export async function contributions(store, username, rawYear = null) {
   if (!isValidUsername(username)) {
     return { status: 400, body: { error: 'That does not look like a GitHub username.' } };
   }
+  const year = rawYear == null || rawYear === '' ? null : Number(rawYear);
+  if (year !== null && !isValidContributionYear(year)) {
+    return { status: 400, body: { error: 'Contribution year must be between 2008 and the current year.' } };
+  }
   try {
-    return { status: 200, body: await fetchContribPayload(store, username) };
+    return { status: 200, body: await fetchContribPayload(store, username, year) };
   } catch (err) {
     const notFound = /not found/i.test(err.message);
     return { status: notFound ? 404 : 502, body: { error: err.message } };
@@ -150,7 +159,8 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
   // sessions carry no rules and replay under v1.
   const rules = Number(session.rules) || 1;
   const final = replayGame({
-    mode: session.mode, seed: Number(session.seed), graph: session.graph || null, rules,
+    mode: session.mode, seed: Number(session.seed), graph: session.graph || null,
+    rules, day: session.day,
   }, inputs);
   if (final.alive && !final.won) {
     return { status: 422, body: { error: 'Replay did not end — invalid run.' } };
@@ -208,7 +218,9 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
   return { status: 200, body: { score: final.score, bestStreak: final.bestStreak, rank, replayId: id } };
 }
 
-export async function leaderboard(store, { mode: rawMode, day: rawDay, user: rawUser }) {
+export async function leaderboard(store, {
+  mode: rawMode, day: rawDay, user: rawUser, friends: rawFriends,
+}) {
   // "All-time" is a cross-board view: the highest scores anywhere, each entry
   // tagged with the mode/board it came from. Scores aren't comparable across
   // modes (a graph has far more food than a classic board), so this board is
@@ -231,8 +243,19 @@ export async function leaderboard(store, { mode: rawMode, day: rawDay, user: raw
     }
     day = rawUser.toLowerCase();
   }
-  const entries = await store.getLeaderboard(mode, day, 20);
-  return { status: 200, body: { mode, day, entries } };
+  const friendNames = String(rawFriends || '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => name.length > 0 && name.length <= 20)
+    .filter((name, index, names) => names.indexOf(name) === index)
+    .slice(0, 12);
+  const entries = mode === 'daily' && friendNames.length
+    ? await store.getFriendLeaderboard(mode, day, friendNames, 20)
+    : await store.getLeaderboard(mode, day, 20);
+  return {
+    status: 200,
+    body: { mode, day, scope: friendNames.length ? 'friends' : 'global', entries },
+  };
 }
 
 export async function replay(store, id) {
@@ -251,7 +274,8 @@ export async function ogImage(store, rawId) {
   if (res.status !== 200) return res;
   const data = res.body;
   const final = replayGame({
-    mode: data.mode, seed: data.seed, graph: data.graph || null, rules: Number(data.rules) || 1,
+    mode: data.mode, seed: data.seed, graph: data.graph || null,
+    rules: Number(data.rules) || 1, day: data.day,
   }, data.inputs);
   const buffer = renderOgImage({
     final, name: data.name, score: data.score, mode: data.mode, day: data.day,
