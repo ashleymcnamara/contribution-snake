@@ -56,10 +56,18 @@ const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-wa
 export function showOverlay(ctx, title, sub, sections = []) {
   clearCountdown(); // cancel any pending resume countdown if we navigate away
   updateRaceStrip(null); // the live position pill only makes sense mid-run
+  const overlay = $('overlay');
+  overlay.dataset.view = sections.includes('classic-hub')
+    ? 'classic'
+    : sections.includes('mode-buttons') ? 'home' : 'panel';
+  document.body.dataset.overlayView = overlay.dataset.view;
+  const header = document.querySelector('.header');
+  if (header) header.inert = overlay.dataset.view === 'classic';
   $('overlay-title').textContent = title;
   $('overlay-sub').textContent = sub;
   for (const id of OVERLAY_SECTIONS) $(id).hidden = !sections.includes(id);
-  $('overlay').style.display = 'flex';
+  overlay.style.display = 'flex';
+  overlay.scrollTop = 0;
   // The touch d-pad is only useful during active play — keep it out of the way
   // (and out of the layout, so the board can reclaim the space) on every menu,
   // game-over, leaderboard and pause screen.
@@ -72,6 +80,9 @@ export function showOverlay(ctx, title, sub, sections = []) {
 
 export function hideOverlay() {
   $('overlay').style.display = 'none';
+  delete document.body.dataset.overlayView;
+  const header = document.querySelector('.header');
+  if (header) header.inert = false;
 }
 
 // Show/hide the on-screen d-pad and re-fit the board to the space that leaves.

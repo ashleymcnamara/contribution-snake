@@ -33,7 +33,7 @@ export function beginSpectate(ctx, data, { label, returnTo = 'leaderboard' } = {
   spectReturn = returnTo;
   ctx.spectSpeed = 1;
   $('btn-spect-speed').textContent = '1×';
-  $('spect-fill').style.width = '0%';
+  $('spect-fill').style.transform = 'scaleX(0)';
   resetClipButton();
   $('btn-spect-clip').hidden = !clipSupported();
   ctx.mode = data.mode;
@@ -90,9 +90,8 @@ export function watchLocalBest(ctx) {
 function updateSpectProgress(ctx) {
   const inputs = ctx.spect.inputs;
   const lastStep = inputs.length ? inputs[inputs.length - 1].s : 0;
-  $('spect-fill').style.width = lastStep
-    ? `${Math.min(100, (ctx.game.stepCount / lastStep) * 100)}%`
-    : '100%';
+  const progress = lastStep ? Math.min(1, ctx.game.stepCount / lastStep) : 1;
+  $('spect-fill').style.transform = `scaleX(${progress})`;
 }
 
 // Click-to-seek: the core is deterministic, so jumping to any point is just
@@ -155,7 +154,7 @@ function spectateTick(ctx, now) {
 
   if (!ctx.game.alive || ctx.game.won) {
     // Hold the final frame briefly, then return to the leaderboard.
-    $('spect-fill').style.width = '100%';
+    $('spect-fill').style.transform = 'scaleX(1)';
     draw(ctx.renderer, ctx.game, null, 1, {});
     setTimeout(() => { if (ctx.state === 'spectate-done') exitSpectate(ctx); }, 900);
     ctx.state = 'spectate-done';

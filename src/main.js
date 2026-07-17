@@ -13,6 +13,7 @@ import * as audio from './audio.js';
 import * as api from './api.js';
 import {
   buildShareCard, downloadCard, shareText, gameUrl, shareLinks, nativeShare,
+  dailyChallengeNumber,
 } from './share.js';
 import { icons } from './icons.js';
 import { ACHIEVEMENTS, loadUnlocked, reconcileUnlocked, evaluate as evaluateAchievements } from './achievements.js';
@@ -425,14 +426,18 @@ function updateDailyNote() {
   const countdown = h > 0 ? `${h}h ${m}m` : `${m}m ${String(s).padStart(2, '0')}s`;
   const played = JSON.parse(localStorage.getItem(`gh-snake-daily-${day}`) || 'null');
   const brief = dailyBriefFor(day);
-  let badge = '';
+  let playedBadge = '';
   if (played) {
     const score = Number(played.score) || 0;
     const rank = Number(played.rank) || 0;
-    badge = ` · <span class="daily-done">${icons.check}</span> ${score} pts${rank ? ` (#${rank})` : ''}`;
+    playedBadge = `<span class="daily-played"><span class="daily-done" aria-hidden="true">${icons.check}</span>` +
+      `<span class="sr-only">Played: </span>${score} pts${rank ? ` · #${rank}` : ''}</span>`;
   }
-  el.innerHTML = `${escapeHtml(brief.title)} · ${escapeHtml(brief.objective.label)}<br>` +
-    `New board in ${countdown}${badge}`;
+  el.innerHTML = `<span class="daily-note-heading">` +
+    `<strong>${escapeHtml(brief.title)}</strong>` +
+    `<span>Daily #${dailyChallengeNumber(day)}</span></span>` +
+    `<span class="daily-objective">Objective: ${escapeHtml(brief.objective.label)}</span>` +
+    `<span class="daily-reset">New board in ${countdown}${playedBadge}</span>`;
   el.hidden = false;
 }
 
@@ -444,21 +449,39 @@ function showClassicScreen() {
   state = 'idle';
   updatePauseButton();
   const progress = loadProgress();
+  const completedCount = CAMPAIGN_LEVELS.filter(
+    (level) => progress.campaignCompleted.includes(level.id),
+  ).length;
+  $('campaign-progress').textContent = `${completedCount}/${CAMPAIGN_LEVELS.length} cleared`;
   $('campaign-list').innerHTML = CAMPAIGN_LEVELS.map((level, index) => {
     const unlocked = campaignUnlocked(level.id, progress);
     const complete = progress.campaignCompleted.includes(level.id);
-    return `<button class="mode-card" type="button" data-campaign="${level.id}" ${unlocked ? '' : 'disabled'}>
-      <span class="mode-card-title">${index + 1}. ${escapeHtml(level.name)}${complete ? ' ✓' : ''}</span>
-      <span class="mode-card-meta">${level.target} commits${unlocked ? '' : ' · locked'}</span>
-      <span class="mode-card-desc">${escapeHtml(level.description)}</span>
+    const status = complete ? 'Cleared' : unlocked ? 'Ready' : 'Locked';
+    const stateClass = complete ? 'is-complete' : unlocked ? 'is-ready' : 'is-locked';
+    return `<button class="mode-card campaign-card ${stateClass}" type="button"
+        data-campaign="${level.id}" ${unlocked ? '' : 'disabled'}>
+      <span class="campaign-step" aria-hidden="true">${complete ? icons.check : index + 1}</span>
+      <span class="mode-card-copy">
+        <span class="mode-card-title">${escapeHtml(level.name)}</span>
+        <span class="mode-card-desc">${escapeHtml(level.description)}</span>
+      </span>
+      <span class="mode-card-side">
+        <span class="mode-card-meta">${level.target} commits</span>
+        <span class="mode-card-state">${status}</span>
+      </span>
     </button>`;
   }).join('');
   $('legends-list').innerHTML = LEGENDS.map((legend) => `
-    <button class="mode-card" type="button" data-legend="${legend.id}" ${serverOk ? '' : 'disabled'}>
-      <span class="mode-card-title">${escapeHtml(legend.title)}</span>
+    <button class="mode-card legend-card" type="button" data-legend="${legend.id}" ${serverOk ? '' : 'disabled'}>
+      <span class="legend-card-head">
+        <span class="mode-card-title">@${escapeHtml(legend.username)}</span>
+        <span class="legend-year">${legend.year}</span>
+      </span>
       <span class="mode-card-desc">${escapeHtml(legend.description)}</span>
+      <span class="legend-card-action">${serverOk ? 'Play year' : 'Server required'}</span>
     </button>`).join('');
-  showOverlay(ctx, 'Classic', 'Choose an endless run, follow the campaign, or raid the archive.',
+  showOverlay(ctx, 'Classic',
+    'Rank a clean Endless run, clear five crafted levels, or play a legendary GitHub year.',
     ['classic-hub', 'classic-back']);
 }
 
@@ -473,7 +496,13 @@ async function startLegend(id) {
   const legend = LEGENDS.find((item) => item.id === id);
   if (!legend || state === 'loading') return;
   state = 'loading';
+  const card = $('legends-list').querySelector(`[data-legend="${legend.id}"]`);
+  const cardAction = card?.querySelector('.legend-card-action');
+  card?.classList.add('is-loading');
+  card?.setAttribute('aria-busy', 'true');
+  if (cardAction) cardAction.textContent = 'Fetching year…';
   $('overlay-sub').textContent = `Fetching the ${legend.title} contribution archive…`;
+  announce(`Fetching ${legend.title}.`);
   try {
     graphData = await api.getContributions(legend.username, legend.year);
     if (!graphData.grid.flat().some((level) => level > 0)) {
@@ -485,7 +514,9 @@ async function startLegend(id) {
   } catch (err) {
     state = 'idle';
     showClassicScreen();
-    $('overlay-sub').textContent = `Couldn't open ${legend.title}: ${err.message}`;
+    const message = `Couldn't open ${legend.title}: ${err.message}`;
+    $('overlay-sub').textContent = message;
+    announce(message);
   }
 }
 
