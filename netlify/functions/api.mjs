@@ -19,7 +19,7 @@ export default async function handler(req, context) {
       return json(logic.health());
     }
     if (username !== undefined) {
-      return json(await logic.contributions(store, username));
+      return json(await logic.contributions(store, username, url.searchParams.get('year')));
     }
     if (url.pathname.startsWith('/api/og/')) {
       const result = await logic.ogImage(store, url.pathname.slice('/api/og/'.length));
@@ -51,6 +51,7 @@ export default async function handler(req, context) {
         mode: url.searchParams.get('mode'),
         day: url.searchParams.get('day'),
         user: url.searchParams.get('user'),
+        friends: url.searchParams.get('friends'),
       }));
     }
     return json({ status: 404, body: { error: 'Not found.' } });

@@ -27,6 +27,7 @@ export function beginSpectate(ctx, data, { label, returnTo = 'leaderboard' } = {
     speedFactor: data.speedFactor || 1,
     rotten: data.rotten || false,
     rules: data.rules || 1, // replay under the rules the run was recorded with
+    day: data.day || null,
   };
   ctx.spect = { inputs: data.inputs, ptr: 0, name: data.name, score: data.score, params };
   spectReturn = returnTo;
@@ -188,6 +189,7 @@ export function toggleClip(ctx) {
     inputs: ctx.spect.inputs,
     months: ctx.monthLabels,
     theme: ctx.theme,
+    cosmetics: ctx.renderer.cosmetics,
     reduceMotion: ctx.renderer.reduceMotion,
     speed: 2,
     caption: { subtitle: `${label} · ${ctx.spect.name}` },

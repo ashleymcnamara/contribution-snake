@@ -38,7 +38,8 @@ const wrap = (fn) => async (req, res) => {
 };
 
 app.get('/api/health', wrap(() => logic.health()));
-app.get('/api/contributions/:username', wrap((req) => logic.contributions(store, req.params.username)));
+app.get('/api/contributions/:username', wrap((req) =>
+  logic.contributions(store, req.params.username, req.query.year)));
 app.post('/api/session', wrap((req) => logic.createSession(store, req.body?.mode, {
   username: req.body?.username, clientId: req.body?.clientId,
 })));

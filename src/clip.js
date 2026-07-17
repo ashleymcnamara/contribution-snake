@@ -39,7 +39,7 @@ const MAX_STEPS_PER_FRAME = 2;
 // or recording is aborted; cancel() stops an in-flight recording without saving.
 export function recordClip({
   params, inputs, months = null, theme, reduceMotion = false, speed = 2,
-  caption = {}, onProgress = null,
+  cosmetics = null, caption = {}, onProgress = null,
 }) {
   const canvas = document.createElement('canvas'); // never added to the layout
   const renderer = createRenderer(canvas);
@@ -56,6 +56,7 @@ export function recordClip({
   });
   sizeToCard(renderer, cols, rows, { width: CARD_W, height: CARD_H, box: CARD_BOARD, chrome });
   renderer.theme = theme;
+  renderer.cosmetics = cosmetics;
   renderer.reduceMotion = reduceMotion;
   clearEffects(renderer);
 

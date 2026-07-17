@@ -31,8 +31,9 @@ export async function checkServer() {
   return serverAvailable;
 }
 
-export function getContributions(username) {
-  return req(`/api/contributions/${encodeURIComponent(username)}`);
+export function getContributions(username, year = null) {
+  const suffix = year ? `?year=${encodeURIComponent(year)}` : '';
+  return req(`/api/contributions/${encodeURIComponent(username)}${suffix}`);
 }
 
 // Anonymous, stable per-browser token. Backs the daily challenge's
@@ -62,10 +63,11 @@ export function submitScore(sessionId, name, inputs) {
 }
 
 // Graph leaderboards are per-username: pass user instead of day.
-export function getLeaderboard(mode, day, user) {
+export function getLeaderboard(mode, day, user, friends = null) {
   const params = new URLSearchParams({ mode });
   if (day) params.set('day', day);
   if (user) params.set('user', user);
+  if (friends?.length) params.set('friends', friends.join(','));
   return req(`/api/leaderboard?${params}`);
 }
 

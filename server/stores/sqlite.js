@@ -131,6 +131,17 @@ export function createSqliteStore(dbPath) {
       `).all(mode, day, day, limit);
     },
 
+    async getFriendLeaderboard(mode, day, names, limit) {
+      const placeholders = names.map(() => '?').join(', ');
+      return db.prepare(`
+        SELECT id AS replayId, name, score, best_streak AS bestStreak, created_at AS createdAt
+        FROM scores
+        WHERE mode = ? AND (day IS ? OR day = ?) AND LOWER(name) IN (${placeholders})
+        ORDER BY score DESC, created_at ASC
+        LIMIT ?
+      `).all(mode, day, day, ...names, limit);
+    },
+
     // Global "Hall of Fame": the highest scores across every mode/board, each
     // tagged with the mode/day it came from.
     async getGlobalLeaderboard(limit) {

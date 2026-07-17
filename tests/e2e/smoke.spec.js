@@ -3,11 +3,17 @@
 // keyboard input — click Classic, wait for Game Over, submit, verify.
 import { test, expect } from '@playwright/test';
 
+async function startClassic(page) {
+  await page.click('#btn-classic');
+  await expect(page.locator('#overlay-title')).toHaveText('Classic');
+  await page.click('#btn-endless');
+}
+
 test('classic run: play, die, submit, verified leaderboard entry', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 
-  await page.click('#btn-classic');
+  await startClassic(page);
   // Unattended, the snake hits the wall in ~2s; death animation follows.
   await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
 
@@ -27,10 +33,11 @@ test('classic run: play, die, submit, verified leaderboard entry', async ({ page
   await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
   await expect(page.locator('#lb-tab-all')).toHaveClass(/active/);
   await expect(page.locator('#leaderboard')).toContainText('Top scores across every mode');
-  await expect(page.locator('.lb-row').filter({ hasText: 'e2e-bot' })).toContainText('Classic');
-  // Simplified to three tabs: the standalone Classic and Yesterday boards are gone.
+  await expect(page.locator('.lb-row').filter({ hasText: 'e2e-bot' }).first()).toContainText('Classic');
+  // The standalone Classic and Yesterday boards are gone; Friends is scoped to Daily.
   await expect(page.locator('#lb-tab-classic')).toHaveCount(0);
   await expect(page.locator('#lb-tab-yesterday')).toHaveCount(0);
+  await expect(page.locator('#lb-tab-friends')).toBeVisible();
 });
 
 test('theme, palette, and pause controls', async ({ page }) => {
@@ -51,7 +58,7 @@ test('theme, palette, and pause controls', async ({ page }) => {
   // Pause and resume mid-game. Starting is async (session fetch) and now opens
   // with a 3-2-1 countdown, so wait for the overlay to hide and the countdown
   // to finish — the game isn't pausable until it's actually playing.
-  await page.click('#btn-classic');
+  await startClassic(page);
   await expect(page.locator('#overlay')).toBeHidden();
   await expect(page.locator('#countdown')).toBeVisible();
   await expect(page.locator('#countdown')).toBeHidden();
@@ -63,7 +70,7 @@ test('theme, palette, and pause controls', async ({ page }) => {
 
 test('a direction key skips the pre-run countdown and steers immediately', async ({ page }) => {
   await page.goto('/');
-  await page.click('#btn-classic');
+  await startClassic(page);
   await expect(page.locator('#countdown')).toBeVisible();
   await page.keyboard.press('ArrowUp');
   // Skipped well before the 1.5s countdown would finish on its own.
@@ -85,7 +92,7 @@ test('wrap-walls variant plays unranked and survives the edge', async ({ page })
   await expect(page.locator('#variant-note')).toBeVisible();
   await expect(page.locator('#variant-summary')).toContainText('wrap');
 
-  await page.click('#btn-classic');
+  await startClassic(page);
   await expect(page.locator('#board-label')).toContainText('unranked');
 
   // Un-wrapped, the unattended snake dies in ~2s. With wrap it crosses the
@@ -96,8 +103,8 @@ test('wrap-walls variant plays unranked and survives the edge', async ({ page })
 
 test('stats panel appears after a finished run', async ({ page }) => {
   await page.goto('/');
-  await page.click('#btn-classic');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await startClassic(page);
+  await expect(page.locator('#btn-menu')).toBeVisible({ timeout: 20000 });
 
   await page.click('#btn-menu');
   await expect(page.locator('#btn-stats')).toBeVisible();
@@ -109,8 +116,8 @@ test('stats panel appears after a finished run', async ({ page }) => {
 
 test('finishing a first game unlocks an achievement and opens the panel', async ({ page }) => {
   await page.goto('/');
-  await page.click('#btn-classic');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await startClassic(page);
+  await expect(page.locator('#btn-menu')).toBeVisible({ timeout: 20000 });
 
   // The very first finished run unlocks "First Bite" and toasts it.
   await expect(page.locator('.toast')).toContainText('First Bite', { timeout: 5000 });
@@ -124,4 +131,57 @@ test('finishing a first game unlocks an achievement and opens the panel', async 
   await expect(page.locator('#achievements-panel')).toContainText('1/10');
   await page.click('#achievements-back');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
+});
+
+test('Classic hub exposes campaign, Legends archive, and power-ups', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#btn-classic');
+  await expect(page.locator('#overlay-title')).toHaveText('Classic');
+  await expect(page.locator('#campaign-list .mode-card')).toHaveCount(5);
+  await expect(page.locator('#legends-list .mode-card')).toHaveCount(3);
+  await expect(page.locator('[data-campaign="first-commit"]')).toBeEnabled();
+  await expect(page.locator('[data-campaign="merge-queue"]')).toBeDisabled();
+
+  await page.click('[data-campaign="first-commit"]');
+  await expect(page.locator('#overlay')).toBeHidden();
+  await expect(page.locator('#board-label')).toContainText('Campaign');
+  await expect(page.locator('#run-brief')).toContainText('Rebase');
+  await expect(page.locator('#level-label')).toHaveText('Goal:');
+});
+
+test('Daily challenge announces its brief and offers a friends board', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#daily-note')).toContainText('New board in');
+  await page.click('#btn-daily');
+  await expect(page.locator('#overlay')).toBeHidden({ timeout: 10000 });
+  await expect(page.locator('#run-brief')).toBeVisible();
+  await expect(page.locator('#run-brief-text')).toContainText('Objective:');
+
+  await page.click('#home-link');
+  await page.click('#btn-leaderboard');
+  await page.click('#lb-tab-friends');
+  await expect(page.locator('#friends-row')).toBeVisible();
+  await page.fill('#friends-input', 'mona, octocat');
+  await page.locator('#friends-row button').click();
+  await expect(page.locator('#leaderboard')).toContainText('submitted today');
+});
+
+test('Locker shows persistent skins, board themes, and trails', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#btn-locker');
+  await expect(page.locator('#overlay-title')).toHaveText('Locker');
+  await expect(page.locator('[data-cosmetic-kind="skin"]')).toHaveCount(3);
+  await expect(page.locator('[data-cosmetic-kind="board"]')).toHaveCount(3);
+  await expect(page.locator('[data-cosmetic-kind="trail"]')).toHaveCount(3);
+  await expect(page.locator('[data-cosmetic="github"]')).toHaveClass(/selected/);
+  await expect(page.locator('[data-cosmetic="gold"]')).toBeDisabled();
+});
+
+test('Legends archive loads a historical contribution year', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#btn-classic');
+  await page.click('[data-legend="torvalds-2016"]');
+  await expect(page.locator('#overlay')).toBeHidden({ timeout: 10000 });
+  await expect(page.locator('#board-label')).toContainText('@torvalds · 2016');
+  await expect(page.locator('#run-brief')).toContainText('historical contribution snapshot');
 });

@@ -47,9 +47,11 @@ export function toast(icon, title, sub) {
 
 // --- overlay management ---
 const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-watch-shared',
-  'btn-watch-best', 'btn-stats', 'btn-achievements', 'btn-install', 'stats-panel', 'stats-back',
-  'achievements-panel', 'achievements-back', 'btn-resume', 'submit-row',
-  'over-actions', 'share-row', 'lb-tabs', 'leaderboard', 'over-stats'];
+  'btn-watch-best', 'btn-stats', 'btn-achievements', 'btn-locker', 'btn-install',
+  'classic-hub', 'classic-back', 'stats-panel', 'stats-back',
+  'achievements-panel', 'achievements-back', 'cosmetics-panel', 'cosmetics-back',
+  'btn-resume', 'submit-row', 'over-actions', 'share-row', 'lb-tabs', 'friends-row',
+  'leaderboard', 'over-stats'];
 
 export function showOverlay(ctx, title, sub, sections = []) {
   clearCountdown(); // cancel any pending resume countdown if we navigate away

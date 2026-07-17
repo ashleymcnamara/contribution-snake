@@ -25,6 +25,7 @@ export function ghostFromRun(run, name) {
       speedFactor: run.speedFactor || 1,
       rotten: run.rotten || false,
       rules: run.rules || 1,
+      day: run.day || null,
     }),
     inputs: run.inputs,
     ptr: 0,
@@ -44,7 +45,7 @@ export async function buildDailyField(session, { raceReplayId = null, raceRun = 
   const ghosts = [];
   const dailyGhost = (rd) => ghostFromRun({
     mode: 'daily', seed: session.seed, inputs: rd.inputs,
-    rules: rd.rules, score: rd.score,
+    rules: rd.rules, score: rd.score, day: session.day,
   }, rd.name);
   try {
     const { entries } = await api.getLeaderboard('daily', session.day);
