@@ -55,10 +55,10 @@ export function createSession(mode, username) {
   });
 }
 
-export function submitScore(sessionId, name, inputs) {
+export function submitScore(sessionId, name, inputs, shareProfile = undefined) {
   return req('/api/scores', {
     method: 'POST',
-    body: JSON.stringify({ sessionId, name, inputs }),
+    body: JSON.stringify({ sessionId, name, inputs, shareProfile }),
   });
 }
 

@@ -40,6 +40,275 @@ test('classic run: play, die, submit, verified leaderboard entry', async ({ page
   await expect(page.locator('#lb-tab-friends')).toBeVisible();
 });
 
+test('Daily result shares a scorecard and opens as a ghost challenge', async ({ page, context }) => {
+  test.setTimeout(60000);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/');
+  await page.click('#btn-daily');
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+
+  const preview = page.locator('#daily-share-preview');
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('.daily-share-row')).toHaveCount(4);
+  await expect(preview).toContainText('Score');
+  await expect(preview).toContainText('Streak');
+  await expect(preview).toContainText('Bonus');
+  await expect(preview).toContainText('Goal');
+  await expect(preview).toContainText('Submit your score to add rank and a raceable ghost.');
+  await expect(preview.locator('.daily-share-objective svg')).toHaveCount(1);
+  await expect(preview.locator('.daily-share-signature svg')).toHaveCount(2);
+  await expect(preview.locator('.daily-share-challenge svg')).toHaveCount(1);
+  expect(await preview.textContent()).not.toMatch(/[🎯🔥🎨]/u);
+  await expect(page.locator('#btn-copy')).toHaveText('Share Daily');
+  await expect(page.locator('#btn-share')).toHaveText('Download card');
+
+  await page.fill('#name-input', 'e2e-daily');
+  await page.click('#btn-submit');
+  await expect(page.locator('#overlay-sub')).toContainText('Verified', { timeout: 10000 });
+  await expect(preview).toContainText('Ghost challenge link ready.');
+  await expect(preview.locator('.daily-share-heading')).toContainText('#1');
+
+  await page.click('#btn-copy');
+  await expect(page.locator('#btn-copy')).toHaveText('Copied!');
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain('GitSnake Daily #');
+  expect(copied).toContain('Score ');
+  expect(copied).toContain('Streak ');
+  expect(copied).toContain('Bonus ');
+  expect(copied).toContain('Goal ');
+  expect(copied).toContain('🐍');
+  expect(copied).not.toMatch(/[🎯🔥🎨]/u);
+  expect(copied).toMatch(/\/r\/[0-9A-Za-z]{8}$/);
+
+  const leaderboard = await page.evaluate(async () => {
+    const response = await fetch('/api/leaderboard?mode=daily');
+    return response.json();
+  });
+  const replayId = leaderboard.entries.find((entry) => entry.name === 'e2e-daily').replayId;
+
+  // Force the next zero-point practice run to become the saved local best.
+  // The one-shot claim and first-run rank must survive that overwrite.
+  await page.evaluate(() => {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = `gh-snake-daily-${day}`;
+    const result = JSON.parse(localStorage.getItem(key));
+    localStorage.setItem(key, JSON.stringify({ ...result, score: -1 }));
+  });
+  await page.click('#btn-again');
+  await expect(page.locator('#overlay')).toBeHidden();
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expect(preview).toContainText('Practice scorecard');
+  await expect(preview).not.toContainText('Submit your score to add rank');
+
+  await page.route(`**/api/replay/${replayId}`, async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+  await page.goto(`/?daily=1&ghost=${replayId}`);
+  await page.click('#btn-classic');
+  await expect(page.locator('#overlay-title')).toHaveText('Classic');
+  await page.waitForTimeout(800);
+  await expect(page.locator('#overlay-title')).toHaveText('Classic');
+  await page.unroute(`**/api/replay/${replayId}`);
+
+  await page.goto(`/?daily=1&ghost=${replayId}`);
+  await expect(page.locator('#overlay-sub')).toContainText('e2e-daily scored');
+  await expect(page.locator('#daily-entry-copy')).toContainText("Race e2e-daily's");
+
+  await page.click('#btn-daily');
+  await expect(page.locator('#board-label')).toContainText('racing e2e-daily', { timeout: 10000 });
+});
+
+test('late score verification does not overwrite a newer screen', async ({ page }) => {
+  await page.goto('/');
+  await page.click('#btn-daily');
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+
+  await page.route('**/api/scores', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+  await page.fill('#name-input', 'slow-submit');
+  await page.click('#btn-submit');
+  await expect(page.locator('#btn-submit')).toHaveText('Verifying…');
+  await page.click('#btn-menu');
+  await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
+  await page.waitForTimeout(800);
+  await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
+  await expect(page.locator('#mode-buttons')).toBeVisible();
+  await expect(page.locator('#leaderboard')).toBeHidden();
+});
+
+test('late Daily verification turns a newer result into practice', async ({ page }) => {
+  test.setTimeout(60000);
+  let releaseResponse;
+  let markProcessed;
+  const responseHold = new Promise((resolve) => { releaseResponse = resolve; });
+  const scoreProcessed = new Promise((resolve) => { markProcessed = resolve; });
+
+  await page.goto('/');
+  await page.click('#btn-daily');
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await page.route('**/api/scores', async (route) => {
+    const response = await route.fetch();
+    markProcessed();
+    await responseHold;
+    await route.fulfill({ response });
+  });
+
+  await page.fill('#name-input', 'first-ranked');
+  await page.click('#btn-submit');
+  await scoreProcessed;
+  await page.click('#btn-again');
+  await expect(page.locator('#overlay')).toBeHidden();
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expect(page.locator('#submit-row')).toBeVisible();
+
+  releaseResponse();
+  await expect(page.locator('#submit-row')).toBeHidden();
+  await expect(page.locator('#overlay-sub')).toContainText('first ranked run already owns this Daily');
+  await expect(page.locator('#daily-share-preview')).toContainText('Practice scorecard');
+});
+
+test('slow Daily startup does not override newer navigation', async ({ page }) => {
+  await page.goto('/');
+  await page.route('**/api/session', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+
+  await page.click('#btn-daily');
+  await page.locator('#btn-classic').evaluate((button) => button.click());
+  await expect(page.locator('#overlay-title')).toHaveText('Classic');
+  await page.waitForTimeout(800);
+  await expect(page.locator('#overlay-title')).toHaveText('Classic');
+  await expect(page.locator('#classic-hub')).toBeVisible();
+});
+
+test('watching a replay cancels an in-flight Daily startup', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('gh-snake-bestrun-classic', JSON.stringify({
+      mode: 'classic',
+      seed: 123,
+      rules: 2,
+      inputs: [],
+      score: 1,
+    }));
+  });
+  await page.route('**/api/session', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+  await page.goto('/');
+  await page.click('#btn-daily');
+  await page.click('#btn-watch-best');
+  await expect(page.locator('#board-label')).toContainText('Your best classic run');
+  await page.waitForTimeout(800);
+  await expect(page.locator('#board-label')).toContainText('Your best classic run');
+  await expect(page.locator('#spectate-cta')).toBeVisible();
+});
+
+test('newest leaderboard tab wins when responses arrive out of order', async ({ page }) => {
+  await page.goto('/');
+  await page.route('**/api/leaderboard?mode=all*', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+
+  await page.click('#btn-leaderboard');
+  await page.click('#lb-tab-daily');
+  await expect(page.locator('#lb-tab-daily')).toHaveClass(/active/);
+  await expect(page.locator('#leaderboard')).not.toContainText('Loading…');
+  await page.waitForTimeout(800);
+  await expect(page.locator('#lb-tab-daily')).toHaveClass(/active/);
+  await expect(page.locator('#leaderboard')).not.toContainText('Top scores across every mode');
+});
+
+test('late replay hydration does not leave the screen the player chose', async ({ page }) => {
+  await page.goto('/');
+  await startClassic(page);
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await page.fill('#name-input', 'slow-replay');
+  await page.click('#btn-submit');
+  await expect(page.locator('#overlay-sub')).toContainText('Verified', { timeout: 10000 });
+  await page.click('#btn-menu');
+  await page.click('#btn-leaderboard');
+
+  const row = page.locator('.lb-row.watchable').filter({ hasText: 'slow-replay' }).first();
+  const replayId = await row.getAttribute('data-replay');
+  await page.route(`**/api/replay/${replayId}`, async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+  await row.click();
+  await page.click('#lb-tab-daily');
+  await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
+  await page.waitForTimeout(800);
+  await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
+  await expect(page.locator('#lb-tab-daily')).toHaveClass(/active/);
+  await expect(page.locator('#spectate-cta')).toBeHidden();
+});
+
+test('late health response reconciles server controls without navigating', async ({ page }) => {
+  await page.route('**/api/health', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+  await page.goto('/');
+  await page.click('#btn-classic');
+  await page.click('#classic-back');
+  await expect(page.locator('#btn-daily')).toBeDisabled();
+  await page.waitForTimeout(800);
+  await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
+  await expect(page.locator('#btn-daily')).toBeEnabled();
+  await expect(page.locator('#btn-graph')).toBeEnabled();
+  await expect(page.locator('#mode-note')).toBeHidden();
+  await expect(page.locator('#btn-leaderboard')).toBeVisible();
+  await expect(page.locator('#daily-note')).toBeVisible();
+});
+
+test('clean Classic waits for health before starting ranked', async ({ page }) => {
+  await page.route('**/api/health', async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    await route.fulfill({ response });
+  });
+  await page.goto('/');
+  await expect(page.locator('#btn-daily')).toBeDisabled();
+  await page.click('#btn-classic');
+  await expect(page.locator('#btn-endless .btn-subline')).toContainText('Checking ranked play');
+  const sessionRequest = page.waitForRequest('**/api/session');
+  await page.click('#btn-endless');
+  await expect(page.locator('#overlay-sub')).toContainText('Checking ranked play');
+  await page.waitForTimeout(200);
+  await expect(page.locator('#overlay')).toBeVisible();
+  await sessionRequest;
+  await expect(page.locator('#overlay')).toBeHidden();
+  await expect(page.locator('#board-label')).toContainText('Snake graph');
+  await expect(page.locator('#board-label')).not.toContainText('offline');
+});
+
+test('offline Classic is explicitly local-only', async ({ page }) => {
+  await page.route('**/api/health', (route) => route.fulfill({
+    status: 503,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: 'offline' }),
+  }));
+  await page.goto('/');
+  await page.click('#btn-classic');
+  await expect(page.locator('#btn-endless .btn-subline')).toContainText('Offline · local score only');
+  await page.click('#btn-endless');
+  await expect(page.locator('#overlay')).toBeHidden();
+  await expect(page.locator('#board-label')).toContainText('offline (local score only)');
+});
+
 test('theme, palette, and pause controls', async ({ page }) => {
   await page.goto('/');
 

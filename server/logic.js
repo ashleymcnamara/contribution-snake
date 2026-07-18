@@ -3,6 +3,7 @@
 // in tests) and returns { status, body } for the adapter to serialize.
 import { createHash, randomUUID, randomInt } from 'node:crypto';
 import { replayGame, validateInputLog, CURRENT_RULES } from '../src/game/core.js';
+import { normalizeShareProfile } from '../src/social.js';
 import {
   fetchContributionDays, toGrid, isValidUsername, isValidContributionYear,
 } from './github.js';
@@ -144,7 +145,9 @@ export async function createSession(store, mode, { username, clientId } = {}) {
   };
 }
 
-export async function submitScore(store, { sessionId, name, inputs }, now = Date.now()) {
+export async function submitScore(store, {
+  sessionId, name, inputs, shareProfile,
+}, now = Date.now()) {
   if (typeof sessionId !== 'string' || !validateInputLog(inputs)) {
     return { status: 400, body: { error: 'Malformed submission.' } };
   }
@@ -203,6 +206,9 @@ export async function submitScore(store, { sessionId, name, inputs }, now = Date
     inputs,
     name: cleanName,
     score: final.score,
+    ...(session.mode === 'daily'
+      ? { shareProfile: normalizeShareProfile(shareProfile) }
+      : {}),
   });
   await store.insertScore({
     id,
@@ -279,8 +285,17 @@ export async function ogImage(store, rawId) {
   }, data.inputs);
   const buffer = renderOgImage({
     final, name: data.name, score: data.score, mode: data.mode, day: data.day,
+    rank: data.mode === 'daily'
+      ? await store.getRank(data.mode, data.day, data.score)
+      : null,
+    shareProfile: normalizeShareProfile(data.shareProfile),
   });
-  return { status: 200, buffer, contentType: 'image/png' };
+  return {
+    status: 200,
+    buffer,
+    contentType: 'image/png',
+    cacheControl: data.mode === 'daily' ? 'no-store' : 'public, max-age=86400, immutable',
+  };
 }
 
 export async function sharePage(store, id, origin) {
@@ -288,9 +303,27 @@ export async function sharePage(store, id, origin) {
   if (res.status !== 200) {
     return { status: res.status, html: `<!DOCTYPE html><p>${res.body.error}</p>` };
   }
-  const { name, score, mode, day } = res.body;
+  const data = res.body;
+  const { name, score, mode, day } = data;
+  const final = replayGame({
+    mode: data.mode, seed: data.seed, graph: data.graph || null,
+    rules: Number(data.rules) || 1, day: data.day,
+  }, data.inputs);
+  const rank = mode === 'daily' ? await store.getRank(mode, day, score) : null;
   return {
     status: 200,
-    html: renderSharePage({ id, name, score, mode, day, origin }),
+    cacheControl: mode === 'daily' ? 'no-store' : 'public, max-age=3600',
+    html: renderSharePage({
+      id,
+      name,
+      score,
+      mode,
+      day,
+      origin,
+      final,
+      rank,
+      shareProfile: normalizeShareProfile(data.shareProfile),
+      challengeCurrent: mode === 'daily' && day === todayUTC(),
+    }),
   };
 }

@@ -7,12 +7,12 @@ export default async function handler(req, context) {
   const store = createBlobStore();
   const origin = new URL(req.url).origin;
   try {
-    const { status, html } = await sharePage(store, context.params?.id, origin);
+    const { status, html, cacheControl } = await sharePage(store, context.params?.id, origin);
     return new Response(html, {
       status,
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': cacheControl || 'no-store',
       },
     });
   } catch (err) {

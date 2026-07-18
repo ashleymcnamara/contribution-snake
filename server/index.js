@@ -52,7 +52,7 @@ app.get('/api/og/:file', async (req, res) => {
     const result = await logic.ogImage(store, req.params.file);
     if (result.buffer) {
       res.set('Content-Type', result.contentType);
-      res.set('Cache-Control', 'public, max-age=86400, immutable');
+      res.set('Cache-Control', result.cacheControl);
       return res.send(result.buffer);
     }
     send(res, result);
@@ -65,7 +65,8 @@ app.get('/api/og/:file', async (req, res) => {
 app.get('/r/:id', async (req, res) => {
   try {
     const origin = `${req.protocol}://${req.get('host')}`;
-    const { status, html } = await logic.sharePage(store, req.params.id, origin);
+    const { status, html, cacheControl } = await logic.sharePage(store, req.params.id, origin);
+    if (cacheControl) res.set('Cache-Control', cacheControl);
     res.status(status).type('html').send(html);
   } catch (err) {
     console.error(err);

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { PNG } from 'pngjs';
 import * as logic from '../server/logic.js';
 import { createMemoryStore } from '../server/stores/memory.js';
 import { CURRENT_RULES } from '../src/game/core.js';
+import { dailyChallengeNumber } from '../src/social.js';
 import { playBotRun } from './helpers.js';
 
 // Insert a session directly so tests can control createdAt (the pacing check
@@ -118,6 +120,24 @@ describe('score submission', () => {
 
     expect((await logic.replay(store, '00000000-0000-0000-0000-000000000000')).status).toBe(404);
     expect((await logic.replay(store, '../etc/passwd')).status).toBe(400);
+  });
+
+  it('stores only bounded display metadata for a Daily replay', async () => {
+    const store = createMemoryStore();
+    const day = logic.todayUTC();
+    const run = playBotRun(42, { mode: 'daily', day });
+    const sessionId = await seedSession(store, {
+      seed: 42, mode: 'daily', ageMs: run.elapsedGameMs + 5000,
+    });
+    const res = await logic.submitScore(store, {
+      sessionId,
+      name: 'daily-player',
+      inputs: run.inputLog,
+      shareProfile: { dailyStreak: 10000.8, skinId: 'not-a-real-skin' },
+    });
+
+    const replay = await logic.replay(store, res.body.replayId);
+    expect(replay.body.shareProfile).toEqual({ dailyStreak: 999, skinId: 'github' });
   });
 });
 
@@ -290,6 +310,58 @@ describe('sanitizeName', () => {
     expect(logic.sanitizeName('')).toBe('anonymous');
     expect(logic.sanitizeName(undefined)).toBe('anonymous');
     expect(logic.sanitizeName('x'.repeat(50))).toHaveLength(20);
+  });
+
+  describe('social replay pages', () => {
+    it('turns a current Daily replay into a ghost challenge and scorecard image', async () => {
+      const store = createMemoryStore();
+      const day = logic.todayUTC();
+      const run = playBotRun(77, { mode: 'daily', day });
+      const sessionId = await seedSession(store, {
+        seed: 77, mode: 'daily', ageMs: run.elapsedGameMs + 5000,
+      });
+      const submitted = await logic.submitScore(store, {
+        sessionId,
+        name: 'daily-pro',
+        inputs: run.inputLog,
+        shareProfile: { dailyStreak: 7, skinId: 'gold' },
+      });
+
+      const page = await logic.sharePage(store, submitted.body.replayId, 'https://snake.test');
+      expect(page.status).toBe(200);
+      expect(page.cacheControl).toBe('no-store');
+      expect(page.html).toContain(`GitSnake Daily #${dailyChallengeNumber(day)}`);
+      expect(page.html).toContain(`?daily=1&amp;ghost=${submitted.body.replayId}`);
+      expect(page.html).toContain('Open the result and try to beat it.');
+      expect(page.html).toContain('Style: Golden Merge');
+      expect(page.html).toContain('spoiler-free');
+
+      const image = await logic.ogImage(store, `${submitted.body.replayId}.png`);
+      expect(image.status).toBe(200);
+      expect(image.cacheControl).toBe('no-store');
+      const png = PNG.sync.read(image.buffer);
+      expect([png.width, png.height]).toEqual([1200, 630]);
+    });
+
+    it('opens an archived Daily share as a replay instead of a mismatched race', async () => {
+      const store = createMemoryStore();
+      const day = '2026-01-02';
+      const run = playBotRun(91, { mode: 'daily', day });
+      const sessionId = await seedSession(store, {
+        seed: 91, mode: 'daily', day, ageMs: run.elapsedGameMs + 5000,
+      });
+      const submitted = await logic.submitScore(store, {
+        sessionId, name: 'archive', inputs: run.inputLog,
+      });
+
+      const page = await logic.sharePage(store, submitted.body.replayId, 'https://snake.test');
+      expect(page.cacheControl).toBe('no-store');
+      expect(page.html).toContain(`?watch=${submitted.body.replayId}`);
+      expect(page.html).not.toContain('?daily=1');
+      expect(page.html).toContain('Open the result and try to beat it.');
+      expect(page.html).toContain('#1 on this Daily');
+      expect(page.html).not.toContain('#1 today');
+    });
   });
 
   it('filters profanity including leetspeak', () => {

@@ -1,6 +1,14 @@
-// Game-over share card: a 1200x630 PNG (OG-image sized) with the final board
-// and run stats, drawn on an offscreen canvas.
-import { dailyObjectiveProgress } from './game/daily.js';
+// Game-over share card: a 1200x630 PNG (OG-image sized) with either a
+// spoiler-free Daily scorecard or the final board, drawn offscreen.
+import {
+  dailyChallengeNumber, dailyScorecard, dailyShareGrid, dailyShareSignature,
+  dailyShareText,
+} from './social.js';
+
+export {
+  claimDailyLocalResult, dailyChallengeNumber, dailyScorecard, dailyShareGrid,
+  dailyShareSignature, mergeDailyLocalResult,
+} from './social.js';
 
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
@@ -101,7 +109,85 @@ export function drawCardChrome(ctx, { theme, title = 'GitSnake', subtitle = '', 
   }
 }
 
-export function buildShareCard({ game, theme, cosmetics = null, modeLabel, username, year = null }) {
+function buildDailyShareCard({
+  game, theme, day, rank, dailyStreak, skinId, name, currentDay,
+}) {
+  const canvas = document.createElement('canvas');
+  canvas.width = CARD_W;
+  canvas.height = CARD_H;
+  const ctx = canvas.getContext('2d');
+  const rows = dailyScorecard(game);
+
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, 0, CARD_W, CARD_H);
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = theme.text;
+  ctx.font = `bold 44px ${FONT}`;
+  ctx.fillText(`GitSnake Daily #${dailyChallengeNumber(day)}`, 64, 48);
+  ctx.fillStyle = theme.accent;
+  ctx.font = `bold 34px ${FONT}`;
+  ctx.fillText(`${name || 'Your run'} · ${game.score} pts`, 64, 108);
+
+  rows.forEach((row, rowIndex) => {
+    const y = 182 + rowIndex * 75;
+    ctx.fillStyle = theme.text;
+    ctx.font = `bold 24px ${FONT}`;
+    ctx.fillText(row.label, 64, y + 13);
+    ctx.fillStyle = theme.textMuted;
+    ctx.font = `22px ${FONT}`;
+    ctx.fillText(row.value, 178, y + 14);
+
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = i < row.filled
+        ? (row.tone === 'bonus' ? theme.gold : theme.accent)
+        : theme.empty;
+      ctx.beginPath();
+      ctx.roundRect(316 + i * 67, y, 51, 51, 4);
+      ctx.fill();
+    }
+  });
+
+  const skinName = skinId === 'gold' ? 'Golden Merge'
+    : skinId === 'neon' ? 'Neon Maintainer' : 'GitHub Green';
+  ctx.fillStyle = theme.textMuted;
+  ctx.font = `20px ${FONT}`;
+  ctx.fillText([
+    rank ? `#${rank} ${currentDay ? 'today' : 'on this Daily'}` : 'Unranked',
+    dailyStreak ? `${dailyStreak}-day streak` : 'Daily run',
+    skinName,
+  ].join(' · '), 64, 516);
+
+  ctx.fillStyle = theme.accent;
+  ctx.font = `bold 23px ${FONT}`;
+  ctx.fillText('Can you beat this Daily?', 704, 490);
+  ctx.fillStyle = theme.textMuted;
+  ctx.font = `18px ${FONT}`;
+  ctx.textAlign = 'right';
+  ctx.fillText('yetanothersnake.dev', CARD_W - 64, CARD_H - 44);
+  return canvas;
+}
+
+export function buildShareCard({
+  game,
+  theme,
+  cosmetics = null,
+  modeLabel,
+  username,
+  year = null,
+  day = null,
+  rank = null,
+  dailyStreak = 0,
+  skinId = 'github',
+  name = null,
+  currentDay = false,
+}) {
+  if (game.mode === 'daily') {
+    return buildDailyShareCard({
+      game, theme, day, rank, dailyStreak, skinId, name, currentDay,
+    });
+  }
   const canvas = document.createElement('canvas');
   canvas.width = CARD_W;
   canvas.height = CARD_H;
@@ -135,13 +221,17 @@ export async function downloadCard(canvas, filename = 'gitsnake-run.png') {
 
 // Canonical URL for a run — graph mode deep-links to the username so a
 // shared link opens ready to play that exact graph.
-export function gameUrl({ mode, username, year = null }) {
+export function gameUrl({ mode, username, year = null, replayId = null }) {
   const base = location.origin + location.pathname;
   if (year && username) {
     return `${base}?legend=${encodeURIComponent(username)}&year=${encodeURIComponent(year)}`;
   }
   if (mode === 'graph' && username) return `${base}?user=${encodeURIComponent(username)}`;
-  if (mode === 'daily') return `${base}?daily=1`;
+  if (mode === 'daily') {
+    const params = new URLSearchParams({ daily: '1' });
+    if (replayId) params.set('ghost', replayId);
+    return `${base}?${params}`;
+  }
   return base;
 }
 
@@ -175,36 +265,23 @@ export async function nativeShare({ text, url, canvas }) {
   }
 }
 
-export function dailyChallengeNumber(day) {
-  const start = Date.parse('2026-01-01T00:00:00Z');
-  const date = Date.parse(`${day}T00:00:00Z`);
-  return Number.isFinite(date) ? Math.max(1, Math.floor((date - start) / 86400000) + 1) : 1;
-}
-
-export function dailyShareGrid(game) {
-  const objective = dailyObjectiveProgress(game);
-  const checks = [
-    game.score >= 50,
-    game.score >= 150,
-    game.bestStreak >= 5,
-    game.goldenEaten >= 1,
-    objective.complete,
-  ];
-  return checks.map((complete, index) => complete ? (index === 4 ? '🟨' : '🟩') : '⬛').join('');
-}
-
 export function shareText({
-  game, mode, day, rank, username, year = null, campaignName = null,
+  game,
+  mode,
+  day,
+  rank,
+  username,
+  year = null,
+  campaignName = null,
+  rankLabel = 'today',
+  dailyStreak = 0,
+  skinId = 'github',
 }) {
   const rankTag = rank ? ` · #${rank}${mode === 'daily' ? ' today' : ''}` : '';
   if (mode === 'daily') {
-    const objective = dailyObjectiveProgress(game);
-    const result = `GitSnake Daily #${dailyChallengeNumber(day)} · ${day}\n` +
-      `${dailyShareGrid(game)}\n` +
-      `${game.score} contributions · ${game.bestStreak} streak${rankTag}`;
-    return objective.label
-      ? `${result}\n🎯 ${objective.label} ${objective.complete ? '✓' : `${objective.current}/${objective.target}`}`
-      : result;
+    return dailyShareText({
+      game, day, rank, rankLabel, dailyStreak, skinId,
+    });
   }
   if (mode === 'graph') {
     const pct = game.totalCells

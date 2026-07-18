@@ -22,7 +22,7 @@ Three ways to play:
   <img src="docs/start.png" alt="The GitSnake start menu" width="360">
 </p>
 
-Along the way there are golden commits for bonus points, achievements to unlock, and server-verified leaderboards (all-time, today's daily, a local friends view, and one per graph). Daily results copy as a compact five-tile challenge card. Daily streaks, completed objectives, and campaign clears unlock snake skins, grid themes, and trails in the Locker. Click any leaderboard score to watch the run back, or export it as a video clip to share. There's also a handful of just-for-fun unranked variants: wrap-around walls, chill speed, rotten commits, and racing your own best ghost.
+Along the way there are golden commits for bonus points, achievements to unlock, and server-verified leaderboards (all-time, today's daily, a local friends view, and one per graph). Daily results become a labeled, spoiler-free scorecard; a verified share link gets a personalized preview and opens the same board with that run as the featured ghost. Daily streaks, completed objectives, and campaign clears unlock snake skins, grid themes, and trails in the Locker. Click any leaderboard score to watch the run back, or export it as a video clip to share. There's also a handful of just-for-fun unranked variants: wrap-around walls, chill speed, rotten commits, and racing your own best ghost.
 
 ## Under the hood
 
