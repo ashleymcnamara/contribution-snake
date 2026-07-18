@@ -63,11 +63,10 @@ export function submitScore(sessionId, name, inputs, shareProfile = undefined) {
 }
 
 // Graph leaderboards are per-username: pass user instead of day.
-export function getLeaderboard(mode, day, user, friends = null) {
+export function getLeaderboard(mode, day, user) {
   const params = new URLSearchParams({ mode });
   if (day) params.set('day', day);
   if (user) params.set('user', user);
-  if (friends?.length) params.set('friends', friends.join(','));
   return req(`/api/leaderboard?${params}`);
 }
 

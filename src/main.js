@@ -197,7 +197,7 @@ function getVariants() {
 
 function variantsActiveFor(m) {
   const v = getVariants();
-  return (v.wrap || v.chill || v.rotten) && m !== 'daily' && m !== 'campaign';
+  return m === 'classic' && (v.wrap || v.chill || v.rotten);
 }
 
 function racePref() {
@@ -206,14 +206,16 @@ function racePref() {
 
 function updateVariantNote() {
   const v = getVariants();
-  const race = racePref();
+  const canRace = !!bestRunFor('classic');
+  const race = canRace && racePref();
   $('var-wrap').checked = v.wrap;
   $('var-chill').checked = v.chill;
   $('var-rotten').checked = v.rotten;
   $('var-race').checked = race;
+  $('var-race-label').hidden = !canRace;
   const notes = [];
-  if (v.wrap || v.chill || v.rotten) notes.push('Variant runs are unranked (classic and graph only).');
-  if (race) notes.push('Race a translucent ghost of your best run — classic reuses that board (unranked).');
+  if (v.wrap || v.chill || v.rotten) notes.push('Custom Endless runs are unranked.');
+  if (race) notes.push('Racing your best replays that run’s board and is unranked.');
   $('variant-note').textContent = notes.join(' ');
   $('variant-note').hidden = notes.length === 0;
   // The disclosure's summary names whatever is on, so collapsing the panel
@@ -222,8 +224,8 @@ function updateVariantNote() {
     v.wrap && 'wrap', v.chill && 'chill', v.rotten && 'rotten', race && 'race best',
   ].filter(Boolean);
   $('variant-summary').innerHTML = active.length
-    ? `Variants · <span class="variant-summary-active">${active.join(' + ')}</span>`
-    : 'Variants';
+    ? `Customize Endless · <span class="variant-summary-active">${active.join(' + ')}</span>`
+    : 'Customize Endless';
 }
 
 function updateUI() {
@@ -395,9 +397,6 @@ function showStartScreen() {
   if (localBest) {
     $('btn-watch-best').textContent = `Watch your best run (${localBest.score} pts)`;
   }
-  // No saved run yet -> nothing to race; keep the toggle out of the way.
-  $('var-race-label').hidden = !localBest;
-  updateVariantNote();
   $('run-brief').hidden = true;
   startDemo();
   syncServerAvailability();
@@ -557,6 +556,7 @@ function showClassicScreen() {
       <span class="mode-card-desc">${escapeHtml(legend.description)}</span>
       <span class="legend-card-action">${serverOk ? 'Play year' : 'Server required'}</span>
     </button>`).join('');
+  updateVariantNote();
   showOverlay(ctx, 'Classic',
     'Rank a clean Endless run, clear five crafted levels, or play a legendary GitHub year.',
     ['classic-hub', 'classic-back']);
@@ -694,17 +694,16 @@ async function startRun(selectedMode, {
   lastDeathCause = null;
   monthLabels = mode === 'graph' ? graphData.months : null;
 
-  // Variant runs (wrap walls / chill speed / rotten commits) are unranked: no
-  // session is created, so there is nothing to submit — fairness by absence.
+  // Customized Endless runs are unranked: no session is created, so there is
+  // nothing to submit — fairness by absence.
   const variants = variantsActiveFor(mode)
     ? getVariants()
     : { wrap: false, chill: false, rotten: false };
   const useVariants = variants.wrap || variants.chill || variants.rotten;
 
-  // Race-your-best: a ghost of your best local run for this mode. Classic
-  // has to replay that run's exact board (its seed and rules), so it skips
-  // the session and plays unranked; daily and graph boards already match.
-  const raceRun = racePref() ? bestRunFor(mode) : null;
+  // Race-your-best is an Endless customization. It replays the saved run's
+  // exact board and rules, so the new run skips ranking.
+  const raceRun = mode === 'classic' && racePref() ? bestRunFor(mode) : null;
   const raceClassic = mode === 'classic' && !!raceRun;
   const needsRankedClassicSession = mode === 'classic'
     && !useVariants
@@ -1254,53 +1253,24 @@ function graphLbUser() {
   return graphData?.username || localStorage.getItem('gh-snake-user') || null;
 }
 
-const FRIENDS_KEY = 'gh-snake-friends';
-
-function loadFriends() {
-  try {
-    const names = JSON.parse(localStorage.getItem(FRIENDS_KEY) || '[]');
-    return Array.isArray(names) ? names.filter((name) => typeof name === 'string').slice(0, 12) : [];
-  } catch {
-    return [];
-  }
-}
-
-function friendBoardNames() {
-  const mine = localStorage.getItem('gh-snake-name');
-  return [...new Set([...loadFriends(), ...(mine ? [mine] : [])])].slice(0, 12);
-}
-
 async function renderLeaderboard(lbMode, dailyDay = null) {
   const requestVersion = ++leaderboardRequestVersion;
   const el = $('leaderboard');
   el.hidden = false;
   el.innerHTML = '<div class="lb-empty">Loading…</div>';
-  const friendsOnly = lbMode === 'friends';
-  $('friends-row').hidden = !friendsOnly;
-  if (friendsOnly) {
-    $('friends-input').value = loadFriends().join(', ');
-    if (!friendBoardNames().length) {
-      el.innerHTML = '<div class="lb-empty">Add the leaderboard names your friends use. Your list stays in this browser.</div>';
-      return;
-    }
-  }
   try {
-    const queryMode = friendsOnly ? 'daily' : lbMode;
     const today = new Date().toISOString().slice(0, 10);
-    const day = queryMode === 'daily' ? dailyDay || today : undefined;
+    const day = lbMode === 'daily' ? dailyDay || today : undefined;
     const user = lbMode === 'graph' ? graphLbUser() : undefined;
-    const { entries, day: actualDay } = await api.getLeaderboard(
-      queryMode, day, user, friendsOnly ? friendBoardNames() : null);
+    const { entries, day: actualDay } = await api.getLeaderboard(lbMode, day, user);
     if (requestVersion !== leaderboardRequestVersion) return;
     if (!entries.length) {
       const dailyWhen = day === today ? 'today' : `on ${day}`;
-      el.innerHTML = `<div class="lb-empty">${friendsOnly
-        ? `No one in your friends list has submitted ${dailyWhen} yet.`
-        : `No scores yet${lbMode === 'daily' ? ` ${dailyWhen}` : ''}${lbMode === 'graph' ? ` on @${escapeHtml(user)}'s graph` : ''}. Be the first!`}</div>`;
+      el.innerHTML = `<div class="lb-empty">No scores yet${lbMode === 'daily' ? ` ${dailyWhen}` : ''}${lbMode === 'graph' ? ` on @${escapeHtml(user)}'s graph` : ''}. Be the first!</div>`;
       return;
     }
     // Today's daily runs share today's seed, so any of them can be raced live.
-    const raceable = queryMode === 'daily' && day === today && serverOk;
+    const raceable = lbMode === 'daily' && day === today && serverOk;
     // The all-time board mixes modes, so each row shows where the run came from.
     const showWhere = lbMode === 'all';
     const myName = localStorage.getItem('gh-snake-name');
@@ -1315,10 +1285,7 @@ async function renderLeaderboard(lbMode, dailyDay = null) {
             title="Race this run" aria-label="Race ${escapeHtml(e.name)}'s run">${icons.race}</button>` : ''}
         ${e.replayId ? `<span class="lb-watch" aria-hidden="true">${icons.play}</span>` : ''}
       </div>`).join('');
-    if (friendsOnly && actualDay) {
-      el.insertAdjacentHTML('afterbegin',
-        `<div class="lb-empty">Friends · ${actualDay}<br><small>Matched by saved leaderboard name on this device.</small></div>`);
-    } else if (lbMode === 'daily' && actualDay) {
+    if (lbMode === 'daily' && actualDay) {
       el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Daily · ${actualDay}</div>`);
     } else if (lbMode === 'graph') {
       el.insertAdjacentHTML('afterbegin', `<div class="lb-empty">Graph · @${escapeHtml(user)}</div>`);
@@ -1341,7 +1308,7 @@ function lbWhere(e) {
 }
 
 function setActiveTab(activeId) {
-  for (const id of ['lb-tab-all', 'lb-tab-daily', 'lb-tab-friends', 'lb-tab-graph']) {
+  for (const id of ['lb-tab-all', 'lb-tab-daily', 'lb-tab-graph']) {
     const btn = $(id);
     const on = id === activeId;
     btn.classList.toggle('active', on);
@@ -1864,23 +1831,10 @@ $('lb-tab-daily').addEventListener('click', () => {
   setActiveTab('lb-tab-daily');
   renderLeaderboard('daily');
 });
-$('lb-tab-friends').addEventListener('click', () => {
-  cancelPendingLoads();
-  setActiveTab('lb-tab-friends');
-  renderLeaderboard('friends');
-});
 $('lb-tab-graph').addEventListener('click', () => {
   cancelPendingLoads();
   setActiveTab('lb-tab-graph');
   renderLeaderboard('graph');
-});
-$('friends-row').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const names = [...new Set($('friends-input').value.split(',')
-    .map((name) => name.trim())
-    .filter((name) => name.length > 0 && name.length <= 20))].slice(0, 12);
-  localStorage.setItem(FRIENDS_KEY, JSON.stringify(names));
-  renderLeaderboard('friends');
 });
 $('lb-back').addEventListener('click', showStartScreen);
 $('btn-watch-best').addEventListener('click', watchBestReplay);

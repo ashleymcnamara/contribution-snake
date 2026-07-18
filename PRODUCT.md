@@ -6,7 +6,7 @@ product
 
 ## Users
 
-GitSnake is for developers and GitHub community members who want a delightful, immediately understandable break. They may arrive to play their own contribution history, compare a Daily result with friends, chase a Classic score, or explore the contribution patterns of open-source maintainers.
+GitSnake is for developers and GitHub community members who want a delightful, immediately understandable break. They may arrive to play their own contribution history, compare a Daily result, chase a Classic score, or explore the contribution patterns of open-source maintainers.
 
 ## Product Purpose
 

@@ -222,26 +222,6 @@ describe('all-time leaderboard', () => {
     expect(rows[3]).toMatchObject({ mode: 'classic', day: null });
   });
 
-  describe('friends leaderboard', () => {
-    it('filters a Daily board to the requested local friend names', async () => {
-      const store = createMemoryStore();
-      const day = '2026-07-17';
-      await store.insertScore({ id: 'aaaaaaaa', mode: 'daily', day, name: 'Ashley', score: 300, bestStreak: 7, snakeLength: 10, createdAt: 1000 });
-      await store.insertScore({ id: 'bbbbbbbb', mode: 'daily', day, name: 'Mona', score: 450, bestStreak: 9, snakeLength: 12, createdAt: 2000 });
-      await store.insertScore({ id: 'cccccccc', mode: 'daily', day, name: 'Stranger', score: 900, bestStreak: 12, snakeLength: 15, createdAt: 3000 });
-
-      const board = await logic.leaderboard(store, {
-        mode: 'daily',
-        day,
-        friends: 'ashley,mona',
-      });
-
-      expect(board.status).toBe(200);
-      expect(board.body.scope).toBe('friends');
-      expect(board.body.entries.map((entry) => entry.name)).toEqual(['Mona', 'Ashley']);
-    });
-  });
-
   it('breaks score ties by earliest submission', async () => {
     const store = createMemoryStore();
     await store.insertScore({ id: 'later000', mode: 'classic', day: null, name: 'late', score: 100, bestStreak: 1, snakeLength: 5, createdAt: 5000 });
