@@ -225,7 +225,7 @@ export async function submitScore(store, {
 }
 
 export async function leaderboard(store, {
-  mode: rawMode, day: rawDay, user: rawUser, friends: rawFriends,
+  mode: rawMode, day: rawDay, user: rawUser,
 }) {
   // "All-time" is a cross-board view: the highest scores anywhere, each entry
   // tagged with the mode/board it came from. Scores aren't comparable across
@@ -249,19 +249,8 @@ export async function leaderboard(store, {
     }
     day = rawUser.toLowerCase();
   }
-  const friendNames = String(rawFriends || '')
-    .split(',')
-    .map((name) => name.trim().toLowerCase())
-    .filter((name) => name.length > 0 && name.length <= 20)
-    .filter((name, index, names) => names.indexOf(name) === index)
-    .slice(0, 12);
-  const entries = mode === 'daily' && friendNames.length
-    ? await store.getFriendLeaderboard(mode, day, friendNames, 20)
-    : await store.getLeaderboard(mode, day, 20);
-  return {
-    status: 200,
-    body: { mode, day, scope: friendNames.length ? 'friends' : 'global', entries },
-  };
+  const entries = await store.getLeaderboard(mode, day, 20);
+  return { status: 200, body: { mode, day, entries } };
 }
 
 export async function replay(store, id) {

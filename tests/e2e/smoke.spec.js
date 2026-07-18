@@ -9,7 +9,20 @@ async function startClassic(page) {
   await page.click('#btn-endless');
 }
 
-test('classic run: play, die, submit, verified leaderboard entry', async ({ page }) => {
+async function submitClassicAndOpenLeaderboard(page, name) {
+  await startClassic(page);
+  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await page.fill('#name-input', name);
+  await page.click('#btn-submit');
+  await expect(page.locator('#overlay-sub')).toContainText('Verified', { timeout: 10000 });
+  const row = page.locator('.lb-row.watchable').filter({ hasText: name }).first();
+  await row.click();
+  await expect(page.locator('#board-label')).toContainText('Watching', { timeout: 5000 });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
+}
+
+test('classic run: play, die, submit, verified standings entry', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 
@@ -34,10 +47,12 @@ test('classic run: play, die, submit, verified leaderboard entry', async ({ page
   await expect(page.locator('#lb-tab-all')).toHaveClass(/active/);
   await expect(page.locator('#leaderboard')).toContainText('Top scores across every mode');
   await expect(page.locator('.lb-row').filter({ hasText: 'e2e-bot' }).first()).toContainText('Classic');
-  // The standalone Classic and Yesterday boards are gone; Friends is scoped to Daily.
+  // The standalone Classic and Yesterday boards remain gone, and there is no
+  // Friends setup surface competing with the result-driven standings.
   await expect(page.locator('#lb-tab-classic')).toHaveCount(0);
   await expect(page.locator('#lb-tab-yesterday')).toHaveCount(0);
-  await expect(page.locator('#lb-tab-friends')).toBeVisible();
+  await expect(page.locator('#lb-tab-friends')).toHaveCount(0);
+  await expect(page.locator('#friends-row')).toHaveCount(0);
 });
 
 test('Daily result shares a scorecard and opens as a ghost challenge', async ({ page, context }) => {
@@ -231,13 +246,7 @@ test('newest leaderboard tab wins when responses arrive out of order', async ({ 
 
 test('late replay hydration does not leave the screen the player chose', async ({ page }) => {
   await page.goto('/');
-  await startClassic(page);
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
-  await page.fill('#name-input', 'slow-replay');
-  await page.click('#btn-submit');
-  await expect(page.locator('#overlay-sub')).toContainText('Verified', { timeout: 10000 });
-  await page.click('#btn-menu');
-  await page.click('#btn-leaderboard');
+  await submitClassicAndOpenLeaderboard(page, 'slow-replay');
 
   const row = page.locator('.lb-row.watchable').filter({ hasText: 'slow-replay' }).first();
   const replayId = await row.getAttribute('data-replay');
@@ -271,6 +280,7 @@ test('late health response reconciles server controls without navigating', async
   await expect(page.locator('#btn-graph')).toBeEnabled();
   await expect(page.locator('#mode-note')).toBeHidden();
   await expect(page.locator('#btn-leaderboard')).toBeVisible();
+  await expect(page.locator('#btn-locker')).toBeVisible();
   await expect(page.locator('#daily-note')).toBeVisible();
 });
 
@@ -355,13 +365,15 @@ test('graph-mode deep link primes the username', async ({ page }) => {
 
 test('wrap-walls variant plays unranked and survives the edge', async ({ page }) => {
   await page.goto('/');
-  // Variants live behind a disclosure; open it to reach the toggles.
+  await page.click('#btn-classic');
+  await expect(page.locator('#overlay-title')).toHaveText('Classic');
+  // Endless customization is revealed only after choosing Classic.
   await page.click('#variant-summary');
   await page.check('#var-wrap');
   await expect(page.locator('#variant-note')).toBeVisible();
   await expect(page.locator('#variant-summary')).toContainText('wrap');
 
-  await startClassic(page);
+  await page.click('#btn-endless');
   await expect(page.locator('#board-label')).toContainText('unranked');
 
   // Un-wrapped, the unattended snake dies in ~2s. With wrap it crosses the
@@ -418,21 +430,15 @@ test('Classic hub exposes campaign, Legends archive, and power-ups', async ({ pa
   await expect(page.locator('#level-label')).toHaveText('Goal:');
 });
 
-test('Daily challenge announces its brief and offers a friends board', async ({ page }) => {
+test('Daily challenge announces its brief without a Friends setup flow', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#daily-note')).toContainText('New board in');
+  await expect(page.locator('#lb-tab-friends')).toHaveCount(0);
+  await expect(page.locator('#friends-row')).toHaveCount(0);
   await page.click('#btn-daily');
   await expect(page.locator('#overlay')).toBeHidden({ timeout: 10000 });
   await expect(page.locator('#run-brief')).toBeVisible();
   await expect(page.locator('#run-brief-text')).toContainText('Objective:');
-
-  await page.click('#home-link');
-  await page.click('#btn-leaderboard');
-  await page.click('#lb-tab-friends');
-  await expect(page.locator('#friends-row')).toBeVisible();
-  await page.fill('#friends-input', 'mona, octocat');
-  await page.locator('#friends-row button').click();
-  await expect(page.locator('#leaderboard')).toContainText('submitted today');
 });
 
 test('Locker shows persistent skins, board themes, and trails', async ({ page }) => {

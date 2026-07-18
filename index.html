@@ -158,16 +158,6 @@
             <span class="mode-entry-title">Play your graph</span>
             <span class="mode-entry-copy">Turn your GitHub year into the board</span>
           </button>
-          <details class="variant-details" id="variant-details">
-            <summary id="variant-summary">Variants</summary>
-            <div class="variant-row">
-              <label class="variant-toggle"><input type="checkbox" id="var-wrap"> Wrap walls</label>
-              <label class="variant-toggle"><input type="checkbox" id="var-chill"> Chill speed</label>
-              <label class="variant-toggle"><input type="checkbox" id="var-rotten"> Rotten commits</label>
-              <label class="variant-toggle" id="var-race-label"><input type="checkbox" id="var-race"> Race your best</label>
-            </div>
-            <div class="mode-note" id="variant-note" hidden>Variant runs are unranked (classic and graph only).</div>
-          </details>
           <div class="mode-note" id="mode-note" hidden></div>
         </div>
         <form class="input-row" id="user-row" hidden>
@@ -178,10 +168,22 @@
 
         <!-- Classic hub -->
         <div class="classic-hub" id="classic-hub" hidden>
-          <button class="btn classic-endless" id="btn-endless">
-            <span>Endless Classic</span>
-            <span class="btn-subline">Ranked · Rebase, Fork &amp; Squash enabled</span>
-          </button>
+          <div class="endless-group">
+            <button class="btn classic-endless" id="btn-endless">
+              <span>Endless Classic</span>
+              <span class="btn-subline">Ranked · Rebase, Fork &amp; Squash enabled</span>
+            </button>
+            <details class="variant-details" id="variant-details">
+              <summary id="variant-summary">Customize Endless</summary>
+              <div class="variant-row">
+                <label class="variant-toggle"><input type="checkbox" id="var-wrap"> Wrap walls</label>
+                <label class="variant-toggle"><input type="checkbox" id="var-chill"> Chill speed</label>
+                <label class="variant-toggle"><input type="checkbox" id="var-rotten"> Rotten commits</label>
+                <label class="variant-toggle" id="var-race-label"><input type="checkbox" id="var-race"> Race your best</label>
+              </div>
+              <div class="mode-note" id="variant-note" hidden>Custom Endless runs are unranked.</div>
+            </details>
+          </div>
           <section class="hub-section" aria-labelledby="campaign-heading">
             <div class="hub-heading-row">
               <h2 class="hub-heading" id="campaign-heading">Campaign</h2>
@@ -251,15 +253,9 @@
         <div class="leaderboard-tabs" id="lb-tabs" hidden>
           <button class="btn btn-secondary" id="lb-tab-all">All-time</button>
           <button class="btn btn-secondary" id="lb-tab-daily">Daily</button>
-          <button class="btn btn-secondary" id="lb-tab-friends">Friends</button>
           <button class="btn btn-secondary" id="lb-tab-graph" hidden>Graph</button>
           <button class="btn btn-secondary" id="lb-back">Back</button>
         </div>
-        <form class="input-row friends-row" id="friends-row" hidden>
-          <input id="friends-input" placeholder="Leaderboard names, comma-separated" autocomplete="off"
-                 spellcheck="false" maxlength="220" aria-label="Friend leaderboard names">
-          <button class="btn" type="submit">Save</button>
-        </form>
         <div class="leaderboard" id="leaderboard" hidden></div>
         </div>
       </div>

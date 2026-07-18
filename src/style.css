@@ -564,8 +564,7 @@ canvas {
 }
 .menu-links:has(> button:not([hidden])) { display: flex; }
 
-/* Fixed width (not just min-width) so revealing #variant-note — a long line —
-   wraps within the column instead of widening it and stretching the buttons. */
+/* Fixed width keeps the three starting choices visually stable. */
 .mode-buttons {
   display: flex;
   flex-direction: column;
@@ -678,6 +677,12 @@ canvas {
   flex-direction: column;
   gap: 20px;
   width: 100%;
+}
+
+.endless-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .classic-endless {
@@ -902,17 +907,16 @@ canvas {
   line-height: 1.4;
 }
 
-/* Variants live behind a disclosure so the start menu stays three buttons.
-   The summary line names any active variant (see main.js), so a checked
-   toggle is never invisible state while collapsed. */
+/* Endless modifiers stay subordinate to the Classic choice. The summary names
+   active modifiers so collapsed customization never hides gameplay state. */
 .variant-details {
   width: 100%;
-  margin-top: 2px;
+  padding-inline: 8px;
 }
 
 .variant-details summary {
   list-style: none;
-  text-align: center;
+  text-align: left;
   font-size: 12px;
   color: var(--text-muted);
   cursor: pointer;
@@ -943,13 +947,14 @@ canvas {
   display: grid;
   grid-template-columns: repeat(2, max-content);
   gap: 7px 20px;
-  justify-content: center;
+  justify-content: start;
   margin-top: 8px;
 }
 
 /* Breathing room so the unranked note doesn't crowd the toggle grid above. */
 #variant-note {
   margin-top: 10px;
+  text-align: left;
 }
 
 .variant-toggle {
@@ -1428,8 +1433,6 @@ canvas {
   color: var(--text);
   font-weight: 600;
 }
-
-.friends-row { width: min(460px, 90vw); }
 
 .lb-row {
   display: flex;

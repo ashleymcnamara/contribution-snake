@@ -31,13 +31,7 @@ test('graph run: play a synthetic calendar, submit, and see it on the Graph tab'
   await expect(page.locator('#overlay-sub')).toContainText('Verified', { timeout: 10000 });
   await expect(page.locator('#overlay-sub')).toContainText('octocat');
 
-  // Open the standings and confirm the entry under the Graph tab specifically.
-  await page.click('#btn-menu');
-  await page.click('#btn-leaderboard');
-  await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
-  const graphTab = page.locator('#lb-tab-graph');
-  await expect(graphTab).toBeVisible();
-  await graphTab.click();
+  // Graph standings also appear directly with the verified result.
   await expect(page.locator('#leaderboard')).toContainText('Graph · @octocat');
   await expect(page.locator('.lb-row.me')).toContainText(player);
 });
