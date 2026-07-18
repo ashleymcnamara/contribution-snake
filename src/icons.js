@@ -39,6 +39,14 @@ export const icons = {
   palette: wrap(
     '<rect x="2" y="2" width="5" height="5" rx="1.5"/><rect x="9" y="2" width="5" height="5" rx="1.5" opacity="0.7"/>' +
     '<rect x="2" y="9" width="5" height="5" rx="1.5" opacity="0.45"/><rect x="9" y="9" width="5" height="5" rx="1.5" opacity="0.2"/>'),
+  target: wrap(
+    '<circle cx="7.2" cy="8.8" r="5.1"/><circle cx="7.2" cy="8.8" r="2.2"/>' +
+    '<path d="m9 7 4.8-4.8M10.8 2.2h3v3"/>',
+    false),
+  flame: wrap('<path d="M8 1.4c2.2 2.3 3.5 4.3 3.5 6.7a3.5 3.5 0 1 1-7 0c0-1.2.5-2.3 1.2-3.1-.1.9.4 1.7 1.1 1.8C6 5.5 6.6 3.3 8 1.4Z"/>'),
+  sparkle: wrap(
+    '<path d="m8 1.6 1.1 3.3L12.4 6 9.1 7.1 8 10.4 6.9 7.1 3.6 6l3.3-1.1L8 1.6Z"/>' +
+    '<path d="m12.6 9.5.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5.5-1.5Z"/>'),
   // Race: a checkered-ish flag for "race this run".
   race: wrap(
     '<path d="M3.5 14V2.2"/>' +

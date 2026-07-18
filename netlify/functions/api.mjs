@@ -27,7 +27,7 @@ export default async function handler(req, context) {
         return new Response(result.buffer, {
           headers: {
             'Content-Type': result.contentType,
-            'Cache-Control': 'public, max-age=86400, immutable',
+            'Cache-Control': result.cacheControl,
           },
         });
       }

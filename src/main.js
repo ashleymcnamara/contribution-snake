@@ -13,7 +13,8 @@ import * as audio from './audio.js';
 import * as api from './api.js';
 import {
   buildShareCard, downloadCard, shareText, gameUrl, shareLinks, nativeShare,
-  dailyChallengeNumber,
+  claimDailyLocalResult, dailyChallengeNumber, dailyScorecard,
+  mergeDailyLocalResult,
 } from './share.js';
 import { icons } from './icons.js';
 import { ACHIEVEMENTS, loadUnlocked, reconcileUnlocked, evaluate as evaluateAchievements } from './achievements.js';
@@ -26,10 +27,12 @@ import {
   setTouchControls, skipCountdown, runCountdown,
 } from './ui.js';
 import {
-  ghostFromRun, buildDailyField, advanceGhost, styleGhosts, updateRaceStrip,
+  ghostFromRun, buildDailyField, dailyReplayMatchesSession,
+  advanceGhost, styleGhosts, updateRaceStrip,
 } from './race.js';
 import {
-  startSpectate, watchLocalBest, seekSpectate, exitSpectate, toggleClip,
+  beginSpectate, cancelSpectateLoad, startSpectate, watchLocalBest,
+  seekSpectate, exitSpectate, toggleClip,
 } from './spectate.js';
 
 const $ = (id) => document.getElementById(id);
@@ -60,9 +63,17 @@ let accumulator = 0;
 // persistently slow frame can't spiral.
 const MAX_STEPS_PER_FRAME = 2;
 let serverOk = false;
+let serverCheckComplete = false;
+let serverCheckPromise = null;
 let submitted = false;
 let lastRank = null;
 let lastReplayId = null;
+let lastRunCanSubmit = false;
+let dailyPreviewDay = null;
+let pendingDailyChallenge = null; // verified replay metadata from a shared Daily link
+let dailyChallengeLoadVersion = 0;
+let runLoadVersion = 0;
+let leaderboardRequestVersion = 0;
 let sharedReplay = null; // { id, name, score } for the "watch again" button
 // Translucent replay opponents racing on the same board. The daily runs a
 // crowd: the whole top-10's replays at once (plus your best / a chosen
@@ -78,6 +89,7 @@ let lastDeathCause = null; // 'wall' | 'self' from the fatal step
 let activeCampaign = null;
 let activeLegend = null;
 let runUnranked = false;
+let runOffline = false;
 let againAction = null;
 
 const MODE_LABELS = {
@@ -363,14 +375,18 @@ function bestLocalRun() {
 }
 
 function showStartScreen() {
+  cancelPendingLoads();
   state = 'idle';
   updatePauseButton();
   const best = getHighScore();
   const localBest = bestLocalRun();
   const stats = loadStats();
+  const startSub = pendingDailyChallenge
+    ? `${pendingDailyChallenge.name} scored ${pendingDailyChallenge.score}. Play today's board and race their ghost.`
+    : best > 0 ? `Eat commits. Grow your streak. Best: ${best}.` : 'Eat commits. Grow your streak.';
   showOverlay(ctx,
     'GitSnake',
-    best > 0 ? `Eat commits. Grow your streak. Best: ${best}.` : 'Eat commits. Grow your streak.',
+    startSub,
     ['mode-buttons', ...(serverOk ? ['btn-leaderboard'] : []),
       ...(localBest ? ['btn-watch-best'] : []),
       ...(stats.games > 0 ? ['btn-stats', 'btn-achievements'] : []), 'btn-locker',
@@ -384,16 +400,56 @@ function showStartScreen() {
   updateVariantNote();
   $('run-brief').hidden = true;
   startDemo();
+  syncServerAvailability();
+  updateDailyChallengePrompt();
+  updateDailyNote();
+}
+
+function syncServerAvailability() {
   $('mode-note').hidden = serverOk;
   if (!serverOk) {
-    $('mode-note').textContent = 'Server offline — classic mode only.';
-    $('btn-daily').disabled = true;
-    $('btn-graph').disabled = true;
-  } else {
-    $('btn-daily').disabled = false;
-    $('btn-graph').disabled = false;
+    $('mode-note').textContent = serverCheckComplete
+      ? 'Server offline — classic mode only.'
+      : 'Checking ranked play…';
   }
-  updateDailyNote();
+  $('btn-daily').disabled = !serverOk;
+  $('btn-graph').disabled = !serverOk;
+  if (state === 'idle' && $('overlay').dataset.view === 'home') {
+    $('btn-leaderboard').hidden = !serverOk;
+    updateDailyNote();
+  }
+  document.querySelectorAll('#legends-list [data-legend]').forEach((button) => {
+    button.disabled = !serverOk;
+    const action = button.querySelector('.legend-card-action');
+    if (action && !button.classList.contains('is-loading')) {
+      action.textContent = serverOk ? 'Play year' : 'Server required';
+    }
+  });
+  if ($('overlay').dataset.view === 'classic') updateClassicAvailability();
+}
+
+async function awaitServerAvailability() {
+  if (!serverCheckPromise) serverCheckPromise = api.checkServer();
+  serverOk = await serverCheckPromise;
+  serverCheckComplete = true;
+  syncServerAvailability();
+  return serverOk;
+}
+
+function updateClassicAvailability() {
+  const subline = $('btn-endless').querySelector('.btn-subline');
+  subline.textContent = !serverCheckComplete
+    ? 'Checking ranked play…'
+    : serverOk
+      ? 'Ranked · Rebase, Fork & Squash enabled'
+      : 'Offline · local score only';
+  if (state === 'idle' && $('overlay').dataset.view === 'classic') {
+    $('overlay-sub').textContent = !serverCheckComplete
+      ? 'Checking ranked play. Campaigns remain available.'
+      : serverOk
+        ? 'Rank a clean Endless run, clear five crafted levels, or play a legendary GitHub year.'
+        : 'Server offline. Endless stays playable locally, and campaigns remain available.';
+  }
 }
 
 // Clicking the logo returns to the start menu from any state (playing, spectating,
@@ -403,12 +459,25 @@ function goHome(e) {
     // Let cmd/ctrl/shift/middle-click open a fresh instance in a new tab.
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
+    pendingDailyChallenge = null;
   }
   const base = import.meta.env.BASE_URL || '/';
   if (location.pathname !== base || location.search) {
     history.replaceState(null, '', base);
   }
   showStartScreen();
+}
+
+function updateDailyChallengePrompt() {
+  const copy = $('daily-entry-copy');
+  const button = $('btn-daily');
+  if (pendingDailyChallenge) {
+    copy.textContent = `Race ${pendingDailyChallenge.name}'s ${pendingDailyChallenge.score}-point ghost`;
+    button.classList.add('is-challenge');
+  } else {
+    copy.textContent = 'The same board and brief for everyone';
+    button.classList.remove('is-challenge');
+  }
 }
 
 // Countdown to the next daily board + today's result badge.
@@ -428,10 +497,13 @@ function updateDailyNote() {
   const brief = dailyBriefFor(day);
   let playedBadge = '';
   if (played) {
-    const score = Number(played.score) || 0;
-    const rank = Number(played.rank) || 0;
+    const result = mergeDailyLocalResult(played, played.score);
+    const { score, rank, rankedScore } = result;
+    const resultLabel = rank && rankedScore !== score
+      ? `Best ${score} pts · first run #${rank}`
+      : `${score} pts${rank ? ` · #${rank}` : ''}`;
     playedBadge = `<span class="daily-played"><span class="daily-done" aria-hidden="true">${icons.check}</span>` +
-      `<span class="sr-only">Played: </span>${score} pts${rank ? ` · #${rank}` : ''}</span>`;
+      `<span class="sr-only">Played: </span>${resultLabel}</span>`;
   }
   el.innerHTML = `<span class="daily-note-heading">` +
     `<strong>${escapeHtml(brief.title)}</strong>` +
@@ -443,9 +515,14 @@ function updateDailyNote() {
 
 setInterval(() => {
   if (state === 'idle' && !$('daily-note').hidden) updateDailyNote();
+  if (state === 'over' && mode === 'daily'
+      && dailyPreviewDay !== new Date().toISOString().slice(0, 10)) {
+    renderDailySharePreview();
+  }
 }, 1000);
 
 function showClassicScreen() {
+  cancelPendingLoads();
   state = 'idle';
   updatePauseButton();
   const progress = loadProgress();
@@ -483,6 +560,7 @@ function showClassicScreen() {
   showOverlay(ctx, 'Classic',
     'Rank a clean Endless run, clear five crafted levels, or play a legendary GitHub year.',
     ['classic-hub', 'classic-back']);
+  updateClassicAvailability();
 }
 
 function startCampaign(id) {
@@ -495,6 +573,8 @@ function startCampaign(id) {
 async function startLegend(id) {
   const legend = LEGENDS.find((item) => item.id === id);
   if (!legend || state === 'loading') return;
+  cancelPendingLoads();
+  const loadVersion = runLoadVersion;
   state = 'loading';
   const card = $('legends-list').querySelector(`[data-legend="${legend.id}"]`);
   const cardAction = card?.querySelector('.legend-card-action');
@@ -504,14 +584,17 @@ async function startLegend(id) {
   $('overlay-sub').textContent = `Fetching the ${legend.title} contribution archive…`;
   announce(`Fetching ${legend.title}.`);
   try {
-    graphData = await api.getContributions(legend.username, legend.year);
-    if (!graphData.grid.flat().some((level) => level > 0)) {
+    const contributions = await api.getContributions(legend.username, legend.year);
+    if (loadVersion !== runLoadVersion) return;
+    if (!contributions.grid.flat().some((level) => level > 0)) {
       throw new Error('That archived year has no public contributions to eat.');
     }
+    graphData = contributions;
     activeLegend = legend;
     state = 'idle';
     await startRun('graph', { unranked: true, legend });
   } catch (err) {
+    if (loadVersion !== runLoadVersion) return;
     state = 'idle';
     showClassicScreen();
     const message = `Couldn't open ${legend.title}: ${err.message}`;
@@ -535,6 +618,7 @@ function cosmeticPreview(item) {
 }
 
 function showCosmeticsScreen() {
+  cancelPendingLoads();
   const stats = loadStats();
   const progress = loadProgress();
   const groups = [
@@ -571,6 +655,16 @@ function bestRunFor(m) {
   return Array.isArray(run?.inputs) ? run : null;
 }
 
+function watchReplay(replayId, options) {
+  cancelPendingLoads();
+  return startSpectate(ctx, replayId, options);
+}
+
+function watchBestReplay() {
+  cancelPendingLoads();
+  watchLocalBest(ctx);
+}
+
 // raceReplayId: race a specific verified run (from a daily leaderboard row)
 // as the ghost instead of the default opponent.
 async function startRun(selectedMode, {
@@ -580,15 +674,20 @@ async function startRun(selectedMode, {
   unranked = false,
 } = {}) {
   if (state === 'loading') return;
+  cancelPendingLoads();
+  const loadVersion = runLoadVersion;
+  const isCurrentLoad = () => loadVersion === runLoadVersion;
   mode = selectedMode;
   activeCampaign = mode === 'campaign' ? campaign : null;
   activeLegend = mode === 'graph' ? legend : null;
   runUnranked = unranked || mode === 'campaign';
+  runOffline = false;
   againAction = null;
   session = null;
   submitted = false;
   lastRank = null;
   lastReplayId = null;
+  lastRunCanSubmit = false;
   sharedReplay = null;
   ghosts = [];
   spect = null;
@@ -607,19 +706,40 @@ async function startRun(selectedMode, {
   // the session and plays unranked; daily and graph boards already match.
   const raceRun = racePref() ? bestRunFor(mode) : null;
   const raceClassic = mode === 'classic' && !!raceRun;
+  const needsRankedClassicSession = mode === 'classic'
+    && !useVariants
+    && !raceClassic
+    && !runUnranked;
+  if (needsRankedClassicSession && !serverCheckComplete) {
+    state = 'loading';
+    $('overlay-sub').textContent = 'Checking ranked play…';
+    await awaitServerAvailability();
+    if (!isCurrentLoad()) return;
+    state = 'idle';
+  }
+  runOffline = needsRankedClassicSession && !serverOk;
+  const requestedRaceReplayId = mode === 'daily'
+    ? raceReplayId || pendingDailyChallenge?.id || null
+    : raceReplayId;
 
   let seed = randomSeed();
   let rules; // undefined -> createGame's current default
   if (serverOk && !useVariants && !raceClassic && !runUnranked && mode !== 'campaign') {
     state = 'loading';
     try {
-      session = await api.createSession(mode, mode === 'graph' ? graphData.username : undefined);
-      seed = session.seed;
+      const createdSession = await api.createSession(
+        selectedMode,
+        selectedMode === 'graph' ? graphData.username : undefined,
+      );
+      if (!isCurrentLoad()) return;
+      session = createdSession;
+      seed = createdSession.seed;
       // Play under the rules the server will replay with (old servers omit it).
-      rules = session.rules || 1;
+      rules = createdSession.rules || 1;
     } catch (err) {
+      if (!isCurrentLoad()) return;
       session = null;
-      if (mode === 'daily') {
+      if (selectedMode === 'daily') {
         state = 'idle';
         showStartScreen();
         $('overlay-sub').textContent = `Couldn't start the daily challenge: ${err.message}`;
@@ -627,12 +747,34 @@ async function startRun(selectedMode, {
       }
     }
     if (mode === 'daily' && session) {
+      if (pendingDailyChallenge?.id === requestedRaceReplayId
+          && !dailyReplayMatchesSession(pendingDailyChallenge, session)) {
+        const archivedReplay = pendingDailyChallenge;
+        pendingDailyChallenge = null;
+        state = 'idle';
+        sharedReplay = {
+          id: archivedReplay.id,
+          name: archivedReplay.name,
+          score: archivedReplay.score,
+        };
+        beginSpectate(ctx, archivedReplay, {
+          label: `Archived challenge · ${archivedReplay.name} · ${archivedReplay.score} pts — Esc or tap to exit`,
+          returnTo: 'share',
+        });
+        return;
+      }
       // Crowd race: everyone on today's board runs alongside you (plus your
       // best / a picked rival, which gets the primary spotlight).
-      ghosts = await buildDailyField(session, { raceReplayId, raceRun });
+      const field = await buildDailyField(session, {
+        raceReplayId: requestedRaceReplayId,
+        raceRun,
+      });
+      if (!isCurrentLoad()) return;
+      ghosts = field;
     }
   }
 
+  if (!isCurrentLoad()) return;
   if (raceClassic) {
     // Replica of your best run's world: same seed, same rules, same variants.
     seed = raceRun.seed;
@@ -674,12 +816,13 @@ async function startRun(selectedMode, {
       : primaryGhost ? ` · racing ${primaryGhost.name}`
         : ghosts.length > 1 ? ` · racing the field (${ghosts.length})`
           : ghosts.length === 1 ? ` · racing ${ghosts[0].name}` : '';
+  const availabilityTag = runOffline ? ' · offline (local score only)' : '';
   $('board-label').textContent = (
     activeLegend ? `${activeLegend.title} · archived contribution year`
       : mode === 'graph' ? `@${graphData.username} · last 12 months`
       : mode === 'daily' ? `Daily challenge · ${session.day}`
         : mode === 'campaign' ? `Campaign · ${activeCampaign.name}`
-          : 'Snake graph') + variantTag;
+          : 'Snake graph') + variantTag + availabilityTag;
 
   hideOverlay();
   state = 'resuming';
@@ -810,6 +953,17 @@ function dyingTick() {
   requestAnimationFrame(dyingTick);
 }
 
+function dailyLocalResult(day) {
+  return day
+    ? JSON.parse(localStorage.getItem(`gh-snake-daily-${day}`) || 'null')
+    : null;
+}
+
+function dailyClaimed(day) {
+  const result = dailyLocalResult(day);
+  return result?.claimed === true || !!result?.rank;
+}
+
 function finishRun(won) {
   state = 'over';
   updatePauseButton();
@@ -875,17 +1029,13 @@ function finishRun(won) {
   if (mode === 'daily' && session?.day) {
     const key = `gh-snake-daily-${session.day}`;
     const prev = JSON.parse(localStorage.getItem(key) || 'null');
-    if (!prev || game.score > prev.score) {
-      localStorage.setItem(key, JSON.stringify({ score: game.score, rank: null }));
-    }
+    localStorage.setItem(key, JSON.stringify(mergeDailyLocalResult(prev, game.score)));
   }
 
   // Daily is one-shot: once a score is ranked today, later runs are practice.
-  const dailyResult = mode === 'daily' && session?.day
-    ? JSON.parse(localStorage.getItem(`gh-snake-daily-${session.day}`) || 'null')
-    : null;
-  const dailyRanked = !!dailyResult?.rank;
+  const dailyRanked = mode === 'daily' && dailyClaimed(session?.day);
   const canSubmit = !!session && serverOk && !dailyRanked;
+  lastRunCanSubmit = canSubmit;
 
   // Headline numbers as stat blocks (same visual language as the stats
   // panel) instead of prose lines that repeat each other.
@@ -918,11 +1068,6 @@ function finishRun(won) {
   // says where you finished in today's field (by everyone's final score) —
   // which doubles as the submit nudge, so previewRank stays out of the way.
   const verdicts = [];
-  if (objective) {
-    verdicts.push(objective.complete
-      ? `<strong>Objective complete:</strong> ${escapeHtml(objective.label)}.`
-      : `Objective: ${escapeHtml(objective.label)} — ${objective.current}/${objective.target}.`);
-  }
   if (mode === 'campaign' && won) {
     const next = nextCampaignLevel(activeCampaign.id);
     verdicts.push(next
@@ -974,7 +1119,7 @@ function finishRun(won) {
     ? `Daily challenge · ${session?.day || ''}${dailyRanked ? ' · practice (first score counts)' : ''}`
     : mode === 'campaign' ? `Campaign · ${activeCampaign.name}`
       : activeLegend ? `Legends archive · ${activeLegend.title}`
-        : 'Don’t break the build.';
+        : runOffline ? 'Offline Classic · local score only.' : 'Don’t break the build.';
   const overlayTitle = mode === 'campaign' && won
     ? 'Level complete!'
     : mode === 'graph' && won ? 'You ate the whole year!'
@@ -982,10 +1127,25 @@ function finishRun(won) {
   const overlaySub = won
     ? mode === 'campaign' ? `${activeCampaign.name} cleared.` : 'Every contribution devoured.'
     : causeLine ? `${causeLine} · ${modeLine}` : modeLine;
+  const isDailyShare = mode === 'daily';
+  $('btn-copy').textContent = isDailyShare ? 'Share Daily' : 'Copy result';
+  $('btn-copy').classList.toggle('btn-secondary', !isDailyShare);
+  $('btn-again').classList.toggle('btn-secondary', isDailyShare);
+  $('btn-share').textContent = isDailyShare ? 'Download card' : 'Share card';
+  const actions = $('over-actions');
+  if (isDailyShare) {
+    actions.insertBefore($('btn-copy'), $('btn-again'));
+  } else {
+    actions.insertBefore($('btn-again'), $('btn-copy'));
+    actions.insertBefore($('btn-share'), $('btn-copy'));
+  }
+  document.querySelector('.share-label').textContent = isDailyShare ? 'Post:' : 'Share:';
+  if (isDailyShare) renderDailySharePreview(statsResult.current);
   showOverlay(ctx,
     overlayTitle,
     overlaySub,
-    ['over-stats', 'over-actions', 'share-row', ...(canSubmit ? ['submit-row'] : [])]
+    ['over-stats', ...(isDailyShare ? ['daily-share-preview'] : []),
+      'over-actions', 'share-row', ...(canSubmit ? ['submit-row'] : [])]
   );
   $('share-native').hidden = !navigator.share;
   $('over-stats').innerHTML = statsHtml;
@@ -1036,13 +1196,16 @@ function finishRun(won) {
 // Tease where this score would land before the player decides to submit.
 async function previewRank() {
   if (game.score <= 0) return;
+  const gameAtCall = game;
+  const sessionAtCall = session;
   const scoreAtCall = game.score;
   try {
     const { entries } = await (mode === 'graph'
       ? api.getLeaderboard('graph', null, graphData.username)
       : api.getLeaderboard(mode === 'daily' ? 'daily' : 'classic',
         mode === 'daily' ? session.day : undefined));
-    if (state !== 'over' || submitted || game.score !== scoreAtCall) return;
+    if (state !== 'over' || submitted || game !== gameAtCall
+        || session !== sessionAtCall || game.score !== scoreAtCall) return;
     const rank = entries.filter((e) => e.score > scoreAtCall).length + 1;
     if (rank > 20 && entries.length >= 20) return; // wouldn't make the board
     $('over-stats').querySelector('.over-verdicts')?.insertAdjacentHTML('beforeend',
@@ -1107,7 +1270,8 @@ function friendBoardNames() {
   return [...new Set([...loadFriends(), ...(mine ? [mine] : [])])].slice(0, 12);
 }
 
-async function renderLeaderboard(lbMode) {
+async function renderLeaderboard(lbMode, dailyDay = null) {
+  const requestVersion = ++leaderboardRequestVersion;
   const el = $('leaderboard');
   el.hidden = false;
   el.innerHTML = '<div class="lb-empty">Loading…</div>';
@@ -1122,18 +1286,21 @@ async function renderLeaderboard(lbMode) {
   }
   try {
     const queryMode = friendsOnly ? 'daily' : lbMode;
-    const day = queryMode === 'daily' ? new Date().toISOString().slice(0, 10) : undefined;
+    const today = new Date().toISOString().slice(0, 10);
+    const day = queryMode === 'daily' ? dailyDay || today : undefined;
     const user = lbMode === 'graph' ? graphLbUser() : undefined;
     const { entries, day: actualDay } = await api.getLeaderboard(
       queryMode, day, user, friendsOnly ? friendBoardNames() : null);
+    if (requestVersion !== leaderboardRequestVersion) return;
     if (!entries.length) {
+      const dailyWhen = day === today ? 'today' : `on ${day}`;
       el.innerHTML = `<div class="lb-empty">${friendsOnly
-        ? 'No one in your friends list has submitted today yet.'
-        : `No scores yet${lbMode === 'daily' ? ' today' : ''}${lbMode === 'graph' ? ` on @${escapeHtml(user)}'s graph` : ''}. Be the first!`}</div>`;
+        ? `No one in your friends list has submitted ${dailyWhen} yet.`
+        : `No scores yet${lbMode === 'daily' ? ` ${dailyWhen}` : ''}${lbMode === 'graph' ? ` on @${escapeHtml(user)}'s graph` : ''}. Be the first!`}</div>`;
       return;
     }
     // Today's daily runs share today's seed, so any of them can be raced live.
-    const raceable = queryMode === 'daily' && serverOk;
+    const raceable = queryMode === 'daily' && day === today && serverOk;
     // The all-time board mixes modes, so each row shows where the run came from.
     const showWhere = lbMode === 'all';
     const myName = localStorage.getItem('gh-snake-name');
@@ -1161,6 +1328,7 @@ async function renderLeaderboard(lbMode) {
     // Bring your own row into view — most useful right after submitting.
     el.querySelector('.lb-row.me')?.scrollIntoView({ block: 'nearest' });
   } catch (err) {
+    if (requestVersion !== leaderboardRequestVersion) return;
     el.innerHTML = `<div class="lb-empty">Couldn't load leaderboard: ${escapeHtml(err.message)}</div>`;
   }
 }
@@ -1183,6 +1351,7 @@ function setActiveTab(activeId) {
 }
 
 function showLeaderboardScreen(initialTab = 'all') {
+  cancelPendingLoads();
   showOverlay(ctx, 'Leaderboard', 'Server-verified scores.', ['lb-tabs', 'leaderboard']);
   $('lb-tab-graph').hidden = !graphLbUser();
   setActiveTab(`lb-tab-${initialTab}`);
@@ -1190,6 +1359,7 @@ function showLeaderboardScreen(initialTab = 'all') {
 }
 
 function showStatsScreen() {
+  cancelPendingLoads();
   const s = loadStats();
   const progress = loadProgress();
   const avg = s.games ? Math.round(s.totalScore / s.games) : 0;
@@ -1212,6 +1382,7 @@ function showStatsScreen() {
 }
 
 function showAchievementsScreen() {
+  cancelPendingLoads();
   const unlocked = loadUnlocked();
   const stats = loadStats();
   $('achievements-panel').innerHTML = ACHIEVEMENTS.map((a) => {
@@ -1246,11 +1417,15 @@ function showAchievementsScreen() {
 async function startGraphRun() {
   const username = $('username-input').value.trim();
   if (!username) return;
+  cancelPendingLoads();
+  const loadVersion = runLoadVersion;
   activeLegend = null;
   $('overlay-sub').textContent = `Fetching @${username}'s contributions…`;
   state = 'loading';
   try {
-    graphData = await api.getContributions(username);
+    const contributions = await api.getContributions(username);
+    if (loadVersion !== runLoadVersion) return;
+    graphData = contributions;
     localStorage.setItem('gh-snake-user', username);
     state = 'idle';
     if (!graphData.grid.flat().some((l) => l > 0)) {
@@ -1259,33 +1434,100 @@ async function startGraphRun() {
     }
     await startRun('graph');
   } catch (err) {
+    if (loadVersion !== runLoadVersion) return;
     state = 'idle';
     $('overlay-sub').textContent = `Couldn't fetch @${username}: ${err.message}`;
   }
 }
 
 // --- score submission ---
+function reconcileDisplayedDailyClaim(day) {
+  if (
+    state !== 'over'
+    || mode !== 'daily'
+    || session?.day !== day
+    || !dailyClaimed(day)
+  ) return false;
+
+  const wasSubmittable = lastRunCanSubmit || !$('submit-row').hidden;
+  lastRunCanSubmit = false;
+  $('btn-submit').disabled = true;
+  $('submit-row').hidden = true;
+  if (!submitted) {
+    renderDailySharePreview();
+    if (wasSubmittable) {
+      const message = 'Practice result — your first ranked run already owns this Daily.';
+      $('overlay-sub').textContent = message;
+      announce(message);
+    }
+  }
+  return true;
+}
+
 async function handleSubmit() {
+  if (mode === 'daily' && session?.day && dailyClaimed(session.day)) {
+    reconcileDisplayedDailyClaim(session.day);
+    return;
+  }
+
   const name = $('name-input').value.trim() || 'anonymous';
   localStorage.setItem('gh-snake-name', name);
   const btn = $('btn-submit');
+  const submittingGame = game;
+  const submittingSession = session;
+  const submittingMode = mode;
+  const submittingGraphUsername = graphData?.username;
+  const stillShowingSubmittedRun = () =>
+    state === 'over'
+    && game === submittingGame
+    && session === submittingSession
+    && mode === submittingMode;
   btn.disabled = true;
   btn.textContent = 'Verifying…';
   try {
-    const result = await api.submitScore(session.sessionId, name, game.inputLog);
+    const result = await api.submitScore(
+      submittingSession.sessionId,
+      name,
+      submittingGame.inputLog,
+      submittingMode === 'daily' ? currentShareProfile() : undefined,
+    );
+    if (submittingMode === 'daily' && submittingSession?.day) {
+      const key = `gh-snake-daily-${submittingSession.day}`;
+      const previous = JSON.parse(localStorage.getItem(key) || 'null');
+      localStorage.setItem(key, JSON.stringify(
+        claimDailyLocalResult(previous, result.score, result.rank),
+      ));
+    }
+    if (!stillShowingSubmittedRun()) {
+      if (submittingMode === 'daily') reconcileDisplayedDailyClaim(submittingSession?.day);
+      return;
+    }
+
     submitted = true;
+    lastRunCanSubmit = false;
     lastRank = result.rank;
     lastReplayId = result.replayId;
-    if (mode === 'daily' && session?.day) {
-      localStorage.setItem(`gh-snake-daily-${session.day}`,
-        JSON.stringify({ score: result.score, rank: result.rank }));
+    if (submittingMode === 'daily') {
+      renderDailySharePreview();
     }
     $('submit-row').hidden = true;
+    const dailyIsCurrent = submittingMode !== 'daily'
+      || submittingSession.day === new Date().toISOString().slice(0, 10);
     $('overlay-sub').textContent = `Verified! You're #${result.rank} ${
-      mode === 'daily' ? 'today' : mode === 'graph' ? `on @${graphData.username}'s graph` : 'in Classic'}.`;
+      submittingMode === 'daily'
+        ? dailyIsCurrent ? 'today' : `on the ${submittingSession.day} Daily`
+        : submittingMode === 'graph' ? `on @${submittingGraphUsername}'s graph` : 'in Classic'}.`;
     $('leaderboard').hidden = false;
-    renderLeaderboard(mode === 'daily' ? 'daily' : mode === 'graph' ? 'graph' : 'classic');
+    renderLeaderboard(
+      submittingMode === 'daily' ? 'daily' : submittingMode === 'graph' ? 'graph' : 'classic',
+      submittingMode === 'daily' ? submittingSession.day : null,
+    );
   } catch (err) {
+    if (!stillShowingSubmittedRun()) return;
+    if (
+      submittingMode === 'daily'
+      && reconcileDisplayedDailyClaim(submittingSession?.day)
+    ) return;
     btn.disabled = false;
     btn.textContent = 'Submit score';
     $('overlay-sub').textContent = `Submission failed: ${err.message}`;
@@ -1293,7 +1535,87 @@ async function handleSubmit() {
 }
 
 // --- share ---
+function currentShareProfile() {
+  return {
+    dailyStreak: loadStats().dailyStreak,
+    skinId: renderer.cosmetics?.skin?.id || 'github',
+  };
+}
+
+function isCurrentDailyDay() {
+  return mode === 'daily' && !!session?.day
+    && session.day === new Date().toISOString().slice(0, 10);
+}
+
+function renderDailySharePreview(stats = loadStats()) {
+  if (mode !== 'daily' || !game) return;
+  const rows = dailyScorecard(game);
+  const objective = dailyObjectiveProgress(game);
+  const profile = {
+    dailyStreak: stats.dailyStreak || 0,
+    skinId: renderer.cosmetics?.skin?.id || 'github',
+  };
+  const currentDay = isCurrentDailyDay();
+  dailyPreviewDay = new Date().toISOString().slice(0, 10);
+  const skinName = renderer.cosmetics?.skin?.name || 'GitHub Green';
+  const signatureItems = [
+    lastRank
+      ? `<span class="daily-share-signature-item"><strong>#${lastRank}</strong> ${currentDay ? 'today' : 'on this Daily'}</span>`
+      : null,
+    profile.dailyStreak
+      ? `<span class="daily-share-signature-item">${icons.flame}<span>${profile.dailyStreak}-day streak</span></span>`
+      : null,
+    `<span class="daily-share-signature-item">${icons.palette}<span>${escapeHtml(skinName)}</span></span>`,
+  ].filter(Boolean);
+  const headingStatus = lastRank
+    ? `#${lastRank} ${currentDay ? 'today' : 'on this Daily'}`
+    : 'Share preview';
+  let challengeMessage;
+  let challengeReady = false;
+  let challengeIcon = icons.share;
+  if (lastReplayId && currentDay) {
+    challengeMessage = 'Ghost challenge link ready.';
+    challengeReady = true;
+    challengeIcon = icons.race;
+  } else if (lastReplayId) {
+    challengeMessage = 'Replay link ready. This Daily is now archived.';
+    challengeIcon = icons.play;
+  } else if (lastRunCanSubmit && currentDay) {
+    challengeMessage = 'Submit your score to add rank and a raceable ghost.';
+  } else if (lastRunCanSubmit) {
+    challengeMessage = 'Submit to archive this result as a watchable replay.';
+  } else if (currentDay) {
+    challengeMessage = 'Practice scorecard — your first ranked run owns today’s ghost link.';
+  } else {
+    challengeMessage = 'Archived practice scorecard — sharing invites friends to the current Daily.';
+  }
+  const rowMarkup = rows.map((row) => {
+    const cells = Array.from({ length: 5 }, (_, index) => {
+      const filled = index < row.filled;
+      const bonus = filled && row.tone === 'bonus';
+      const symbol = filled ? (bonus ? icons.sparkle : icons.check) : '';
+      return `<span class="daily-share-cell${filled ? ' is-filled' : ''}${bonus ? ' is-bonus' : ''}">${symbol}</span>`;
+    }).join('');
+    return `<div class="daily-share-row" aria-label="${escapeHtml(row.label)} ${escapeHtml(row.value)}, ${row.filled} of 5">` +
+      `<strong>${escapeHtml(row.label)}</strong>` +
+      `<span class="daily-share-value">${escapeHtml(row.value)}</span>` +
+      `<span class="daily-share-cells" aria-hidden="true">${cells}</span></div>`;
+  }).join('');
+  $('daily-share-preview').innerHTML =
+    `<div class="daily-share-heading"><strong>Daily #${dailyChallengeNumber(session?.day)}</strong>` +
+      `<span>${headingStatus}</span></div>` +
+    `<div class="daily-share-rows">${rowMarkup}</div>` +
+    (objective.label
+      ? `<div class="daily-share-objective">${icons.target}` +
+        `<span>${escapeHtml(objective.label)}${objective.complete ? ' · complete' : ''}</span></div>`
+      : '') +
+    `<div class="daily-share-signature">${signatureItems.join('<span class="daily-share-separator" aria-hidden="true">·</span>')}</div>` +
+    `<div class="daily-share-challenge${challengeReady ? ' is-ready' : ''}">` +
+      `${challengeIcon}<span>${challengeMessage}</span></div>`;
+}
+
 function currentShareCard() {
+  const profile = currentShareProfile();
   return buildShareCard({
     game,
     theme,
@@ -1301,11 +1623,18 @@ function currentShareCard() {
     modeLabel: MODE_LABELS[mode],
     username: mode === 'graph' ? graphData?.username : null,
     year: activeLegend?.year || null,
+    day: session?.day || null,
+    rank: lastRank,
+    ...profile,
+    name: localStorage.getItem('gh-snake-name') || null,
+    currentDay: isCurrentDailyDay(),
   });
 }
 
 function currentShareContext() {
   const username = mode === 'graph' ? graphData?.username : null;
+  const profile = currentShareProfile();
+  const currentDay = isCurrentDailyDay();
   // A verified run has a share page whose preview shows this exact board.
   const url = lastReplayId
     ? `${location.origin}/r/${lastReplayId}`
@@ -1319,6 +1648,8 @@ function currentShareContext() {
       username,
       year: activeLegend?.year || null,
       campaignName: activeCampaign?.name || null,
+      rankLabel: currentDay ? 'today' : 'on this Daily',
+      ...profile,
     }),
     url,
     username,
@@ -1331,7 +1662,9 @@ async function copyResult() {
   try {
     await navigator.clipboard.writeText(full);
     $('btn-copy').textContent = 'Copied!';
-    setTimeout(() => { $('btn-copy').textContent = 'Copy result'; }, 1500);
+    setTimeout(() => {
+      $('btn-copy').textContent = mode === 'daily' ? 'Share Daily' : 'Copy result';
+    }, 1500);
   } catch {
     $('overlay-sub').textContent = full;
   }
@@ -1344,17 +1677,23 @@ async function shareToNetwork(network) {
 }
 
 async function shareNative() {
-  const { text, url, username } = currentShareContext();
-  const canvas = buildShareCard({
-    game,
-    theme,
-    cosmetics: renderer.cosmetics,
-    modeLabel: MODE_LABELS[mode],
-    username,
-    year: activeLegend?.year || null,
-  });
+  const { text, url } = currentShareContext();
+  const canvas = currentShareCard();
   const ok = await nativeShare({ text, url, canvas });
-  if (!ok) copyResult(); // fall back to clipboard
+  if (!ok) await copyResult(); // fall back to clipboard
+  return ok;
+}
+
+async function primaryShare() {
+  if (mode === 'daily' && navigator.share) {
+    const shared = await shareNative();
+    if (shared) {
+      $('btn-copy').textContent = 'Shared!';
+      setTimeout(() => { $('btn-copy').textContent = 'Share Daily'; }, 1500);
+    }
+    return;
+  }
+  await copyResult();
 }
 
 // --- input wiring ---
@@ -1490,8 +1829,12 @@ $('legends-list').addEventListener('click', (e) => {
   const card = e.target.closest('[data-legend]');
   if (card) { audio.unlock(); startLegend(card.dataset.legend); }
 });
-$('btn-daily').addEventListener('click', () => { audio.unlock(); startRun('daily'); });
+$('btn-daily').addEventListener('click', () => {
+  audio.unlock();
+  startRun('daily', { raceReplayId: pendingDailyChallenge?.id || null });
+});
 $('btn-graph').addEventListener('click', () => {
+  cancelPendingLoads();
   $('user-row').hidden = false;
   $('username-input').value = localStorage.getItem('gh-snake-user') || '';
   $('username-input').focus();
@@ -1504,20 +1847,33 @@ $('btn-menu').addEventListener('click', showStartScreen);
 $('home-link').setAttribute('href', import.meta.env.BASE_URL || '/');
 $('home-link').addEventListener('click', goHome);
 $('btn-share').addEventListener('click', () => downloadCard(currentShareCard()));
-$('btn-copy').addEventListener('click', copyResult);
+$('btn-copy').addEventListener('click', primaryShare);
 $('share-x').addEventListener('click', () => shareToNetwork('x'));
 $('share-bluesky').addEventListener('click', () => shareToNetwork('bluesky'));
 $('share-threads').addEventListener('click', () => shareToNetwork('threads'));
 $('share-native').addEventListener('click', shareNative);
 $('submit-row').addEventListener('submit', (e) => { e.preventDefault(); handleSubmit(); });
 $('btn-leaderboard').addEventListener('click', () => showLeaderboardScreen());
-$('lb-tab-all').addEventListener('click', () => { setActiveTab('lb-tab-all'); renderLeaderboard('all'); });
-$('lb-tab-daily').addEventListener('click', () => { setActiveTab('lb-tab-daily'); renderLeaderboard('daily'); });
+$('lb-tab-all').addEventListener('click', () => {
+  cancelPendingLoads();
+  setActiveTab('lb-tab-all');
+  renderLeaderboard('all');
+});
+$('lb-tab-daily').addEventListener('click', () => {
+  cancelPendingLoads();
+  setActiveTab('lb-tab-daily');
+  renderLeaderboard('daily');
+});
 $('lb-tab-friends').addEventListener('click', () => {
+  cancelPendingLoads();
   setActiveTab('lb-tab-friends');
   renderLeaderboard('friends');
 });
-$('lb-tab-graph').addEventListener('click', () => { setActiveTab('lb-tab-graph'); renderLeaderboard('graph'); });
+$('lb-tab-graph').addEventListener('click', () => {
+  cancelPendingLoads();
+  setActiveTab('lb-tab-graph');
+  renderLeaderboard('graph');
+});
 $('friends-row').addEventListener('submit', (e) => {
   e.preventDefault();
   const names = [...new Set($('friends-input').value.split(',')
@@ -1527,9 +1883,9 @@ $('friends-row').addEventListener('submit', (e) => {
   renderLeaderboard('friends');
 });
 $('lb-back').addEventListener('click', showStartScreen);
-$('btn-watch-best').addEventListener('click', () => watchLocalBest(ctx));
+$('btn-watch-best').addEventListener('click', watchBestReplay);
 $('btn-watch-shared').addEventListener('click', () => {
-  if (sharedReplay) startSpectate(ctx, sharedReplay.id, { returnTo: 'share' });
+  if (sharedReplay) watchReplay(sharedReplay.id, { returnTo: 'share' });
 });
 $('btn-play-own').addEventListener('click', () => exitSpectate(ctx, { toMenu: true }));
 $('btn-stats').addEventListener('click', showStatsScreen);
@@ -1583,13 +1939,13 @@ $('leaderboard').addEventListener('click', (e) => {
     return;
   }
   const row = e.target.closest('[data-replay]');
-  if (row) startSpectate(ctx, row.dataset.replay);
+  if (row) watchReplay(row.dataset.replay);
 });
 $('leaderboard').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   if (e.target.closest('[data-race]')) return; // native button handles it
   const row = e.target.closest('[data-replay]');
-  if (row) { e.preventDefault(); startSpectate(ctx, row.dataset.replay); }
+  if (row) { e.preventDefault(); watchReplay(row.dataset.replay); }
 });
 
 // Auto-pause when the tab loses focus — no unfair deaths in the background.
@@ -1679,6 +2035,51 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
 }
 
 // --- boot ---
+async function prepareDailyChallenge(replayId) {
+  const loadVersion = ++dailyChallengeLoadVersion;
+  const isCurrentRequest = () =>
+    loadVersion === dailyChallengeLoadVersion
+    && state === 'idle'
+    && new URLSearchParams(location.search).get('ghost') === replayId;
+  if (!/^[0-9A-Za-z-]{6,40}$/.test(replayId || '')) {
+    $('overlay-sub').textContent = 'That Daily challenge link is invalid. You can still play today’s board.';
+    return true;
+  }
+  try {
+    const replay = await api.getReplay(replayId);
+    if (!isCurrentRequest()) return false;
+    const today = new Date().toISOString().slice(0, 10);
+    if (replay.mode !== 'daily' || replay.day !== today) {
+      sharedReplay = { id: replayId, name: replay.name, score: replay.score };
+      beginSpectate(ctx, replay, {
+        label: `Archived challenge · ${replay.name} · ${replay.score} pts — Esc or tap to exit`,
+        returnTo: 'share',
+      });
+      return false;
+    }
+    pendingDailyChallenge = {
+      id: replayId,
+      ...replay,
+    };
+    showStartScreen();
+    return true;
+  } catch (err) {
+    if (!isCurrentRequest()) return false;
+    $('overlay-sub').textContent = `Couldn't load that Daily challenge: ${err.message}`;
+    return true;
+  }
+}
+
+function cancelPendingLoads() {
+  dailyChallengeLoadVersion++;
+  runLoadVersion++;
+  leaderboardRequestVersion++;
+  cancelSpectateLoad();
+  if (state === 'loading') {
+    state = 'idle';
+  }
+}
+
 (async function boot() {
   // One-time: re-lock the achievements whose bars were raised so they're re-earned.
   reconcileUnlocked();
@@ -1702,7 +2103,9 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
   draw(renderer, game, null, 1, {});
   updateUI();
 
-  serverOk = await api.checkServer();
+  const bootLoadVersion = runLoadVersion;
+  await awaitServerAvailability();
+  if (bootLoadVersion !== runLoadVersion || state !== 'idle') return;
   showStartScreen();
 
   // Deep links from shares: ?user=<github-username> primes graph mode,
@@ -1711,7 +2114,7 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
   const params = new URLSearchParams(location.search);
   const watchId = params.get('watch');
   if (watchId && /^[0-9A-Za-z-]{6,40}$/.test(watchId) && serverOk) {
-    startSpectate(ctx, watchId, { returnTo: 'share' });
+    watchReplay(watchId, { returnTo: 'share' });
     return;
   }
   const linkedUser = params.get('user');
@@ -1727,7 +2130,11 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol.st
     $('username-input').value = linkedUser;
     $('overlay-sub').textContent = `You've been challenged: eat @${linkedUser}'s year.`;
   } else if (params.get('daily') && serverOk) {
-    $('overlay-sub').textContent = "Today's board is waiting. One try to rule the leaderboard.";
+    const ghostId = params.get('ghost');
+    if (ghostId && !(await prepareDailyChallenge(ghostId))) return;
+    if (!ghostId) {
+      $('overlay-sub').textContent = "Today's board is waiting. One try to rule the leaderboard.";
+    }
     $('btn-daily').focus();
   }
 })();

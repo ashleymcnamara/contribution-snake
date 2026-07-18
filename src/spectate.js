@@ -16,6 +16,11 @@ const $ = (id) => document.getElementById(id);
 let spectReturn = 'leaderboard'; // 'leaderboard' | 'start' | 'share'
 let lastWatched = null; // { name, score } when arriving via a share link
 let clipRec = null; // in-flight replay→WebM recording, or null (see toggleClip)
+let spectateLoadVersion = 0;
+
+export function cancelSpectateLoad() {
+  spectateLoadVersion++;
+}
 
 export function beginSpectate(ctx, data, { label, returnTo = 'leaderboard' } = {}) {
   // params rebuild the exact same game — used again by click-to-seek.
@@ -58,8 +63,10 @@ export function beginSpectate(ctx, data, { label, returnTo = 'leaderboard' } = {
 }
 
 export async function startSpectate(ctx, replayId, { returnTo = 'leaderboard' } = {}) {
+  const loadVersion = ++spectateLoadVersion;
   try {
     const data = await api.getReplay(replayId);
+    if (loadVersion !== spectateLoadVersion) return;
     lastWatched = { name: data.name, score: data.score };
     if (returnTo === 'share') {
       ctx.sharedReplay = { id: replayId, name: data.name, score: data.score };
@@ -71,6 +78,7 @@ export async function startSpectate(ctx, replayId, { returnTo = 'leaderboard' } 
       returnTo,
     });
   } catch (err) {
+    if (loadVersion !== spectateLoadVersion) return;
     $('overlay-sub').textContent = `Couldn't load the replay: ${err.message}`;
   }
 }

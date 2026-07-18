@@ -102,6 +102,7 @@ export function applyTheme(setting, palette = 'green') {
   root.style.setProperty('--text', t.text);
   root.style.setProperty('--text-muted', t.textMuted);
   root.style.setProperty('--accent', t.accent);
+  root.style.setProperty('--share-bonus', t.gold);
   root.style.setProperty('--level-0', t.empty);
   root.style.setProperty('--level-1', t.levels[0]);
   root.style.setProperty('--level-2', t.levels[1]);

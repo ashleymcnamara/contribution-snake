@@ -148,13 +148,13 @@
             <span class="mode-entry-copy">Endless, campaign, and legendary years</span>
           </button>
           <div class="daily-entry">
-            <button class="btn btn-secondary mode-entry mode-entry-daily" id="btn-daily">
+            <button class="btn btn-secondary mode-entry mode-entry-daily" id="btn-daily" disabled>
               <span class="mode-entry-title">Daily challenge</span>
-              <span class="mode-entry-copy">The same board and brief for everyone</span>
+              <span class="mode-entry-copy" id="daily-entry-copy">The same board and brief for everyone</span>
               <span class="mode-note" id="daily-note" hidden></span>
             </button>
           </div>
-          <button class="btn btn-secondary mode-entry mode-entry-graph" id="btn-graph">
+          <button class="btn btn-secondary mode-entry mode-entry-graph" id="btn-graph" disabled>
             <span class="mode-entry-title">Play your graph</span>
             <span class="mode-entry-copy">Turn your GitHub year into the board</span>
           </button>
@@ -226,6 +226,8 @@
         <button class="btn" id="btn-resume" hidden>Resume</button>
 
         <!-- Game over -->
+        <section class="daily-share-preview" id="daily-share-preview"
+                 aria-label="Daily result share preview" aria-live="polite" hidden></section>
         <form class="input-row" id="submit-row" hidden>
           <input id="name-input" placeholder="Your name" autocomplete="off" maxlength="20"
                  aria-label="Name for the leaderboard">

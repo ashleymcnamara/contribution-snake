@@ -37,16 +37,23 @@ export function ghostFromRun(run, name) {
   };
 }
 
+export function dailyReplayMatchesSession(run, session) {
+  return run?.mode === 'daily'
+    && run.day === session?.day
+    && Number(run.seed) === Number(session?.seed)
+    && (Number(run.rules) || 1) === (Number(session?.rules) || 1);
+}
+
 // Crowd race: everyone on today's board runs alongside you. The whole top-
 // FIELD_SIZE replays the same seed; an explicitly-picked rival (leaderboard
 // race button) or your own best gets the primary spotlight. All of it is a
 // bonus — failures just thin the field, so any fetch error is swallowed.
 export async function buildDailyField(session, { raceReplayId = null, raceRun = null } = {}) {
   const ghosts = [];
-  const dailyGhost = (rd) => ghostFromRun({
-    mode: 'daily', seed: session.seed, inputs: rd.inputs,
-    rules: rd.rules, score: rd.score, day: session.day,
-  }, rd.name);
+  const dailyGhost = (rd) => {
+    if (!dailyReplayMatchesSession(rd, session)) return null;
+    return ghostFromRun(rd, rd.name);
+  };
   try {
     const { entries } = await api.getLeaderboard('daily', session.day);
     const field = entries.filter((e) => e.replayId).slice(0, FIELD_SIZE);
@@ -54,14 +61,17 @@ export async function buildDailyField(session, { raceReplayId = null, raceRun = 
     replays.forEach((res, i) => {
       if (res.status !== 'fulfilled') return;
       const g = dailyGhost(res.value);
+      if (!g) return;
       if (field[i].replayId === raceReplayId) g.primary = true;
       ghosts.push(g);
     });
     // A picked rival outside the top field still joins (and leads).
     if (raceReplayId && !ghosts.some((g) => g.primary)) {
       const g = dailyGhost(await api.getReplay(raceReplayId));
-      g.primary = true;
-      ghosts.push(g);
+      if (g) {
+        g.primary = true;
+        ghosts.push(g);
+      }
     }
   } catch { /* racing is a bonus, never a blocker */ }
   if (raceRun && raceRun.day === session.day && raceRun.seed === session.seed

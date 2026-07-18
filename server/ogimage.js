@@ -1,7 +1,11 @@
-// Server-rendered OG image (1200x630 PNG) for a verified run: the final
-// board plus stats in a 5x7 pixel font. Pure JS (pngjs) — no native deps,
-// no font files — so it runs unmodified in Netlify Functions and Node.
+// Server-rendered OG image (1200x630 PNG) for a verified run: Daily gets a
+// spoiler-free scorecard; other modes show the final board. Pure JS (pngjs)
+// and a 5x7 pixel font keep this portable across Netlify Functions and Node.
 import { PNG } from 'pngjs';
+import {
+  SHARE_SKINS, dailyChallengeNumber, dailyScorecard, normalizeShareProfile,
+} from '../src/social.js';
+import { dailyObjectiveProgress } from '../src/game/daily.js';
 
 const W = 1200;
 const H = 630;
@@ -105,10 +109,76 @@ function segmentColor(index, total) {
   return C.levels[Math.min(3, Math.floor(ratio * 4))];
 }
 
+function drawDailyImage(png, {
+  final, name, score, day, rank, shareProfile,
+}) {
+  const profile = normalizeShareProfile(shareProfile);
+  const rows = dailyScorecard(final);
+  const objective = dailyObjectiveProgress(final);
+  const number = dailyChallengeNumber(day);
+
+  drawText(png, `GITSNAKE DAILY #${number}`, 60, 44, 5, C.text);
+  const safeName = String(name).slice(0, 20);
+  const nameEnd = drawText(png, safeName, 60, 108, 4, C.accent);
+  drawText(png, ` - ${score} PTS`, nameEnd, 108, 4, C.text);
+
+  rows.forEach((row, rowIndex) => {
+    const y = 202 + rowIndex * 72;
+    drawText(png, `${row.label} ${row.value}`, 60, y + 10, 3, C.text);
+    for (let i = 0; i < 5; i++) {
+      const x = 300 + i * 60;
+      rect(png, x, y, 46, 46, C.muted);
+      const fill = i < row.filled
+        ? (row.tone === 'bonus' ? C.gold : C.accent)
+        : C.empty;
+      rect(png, x + 3, y + 3, 40, 40, fill);
+    }
+  });
+
+  drawText(png, 'DAILY SCORECARD.', 720, 220, 3, C.accent);
+  drawText(png, 'CAN YOU BEAT IT?', 720, 262, 3, C.text);
+  if (objective.label) {
+    drawText(png, `GOAL ${objective.label}`, 720, 328, 2, C.muted);
+  }
+
+  const snake = [
+    [5, 0], [4, 0], [3, 0], [3, 1], [2, 1], [1, 1], [0, 1],
+  ];
+  snake.forEach(([x, y], index) => {
+    rect(png, 720 + x * 48, 390 + y * 48, 40, 40, segmentColor(index, snake.length));
+  });
+  rect(png, 720 + 5 * 48 + 25, 398, 5, 5, C.bg);
+  rect(png, 720 + 5 * 48 + 25, 415, 5, 5, C.bg);
+
+  const signature = [
+    rank ? `#${rank} ON THIS DAILY` : 'DAILY RUN',
+    profile.dailyStreak ? `${profile.dailyStreak} DAY STREAK` : null,
+    SHARE_SKINS[profile.skinId],
+  ].filter(Boolean).join('   ');
+  drawText(png, signature, 60, H - 48, 2, C.muted);
+  drawText(png, 'YETANOTHERSNAKE.DEV',
+    W - 60 - textWidth('YETANOTHERSNAKE.DEV', 2), H - 48, 2, C.accent);
+}
+
 // final: a finished GameState from replayGame.
-export function renderOgImage({ final, name, score, mode, day }) {
+export function renderOgImage({
+  final,
+  name,
+  score,
+  mode,
+  day,
+  rank = null,
+  shareProfile = null,
+}) {
   const png = new PNG({ width: W, height: H });
   rect(png, 0, 0, W, H, C.bg);
+
+  if (mode === 'daily') {
+    drawDailyImage(png, {
+      final, name, score, day, rank, shareProfile,
+    });
+    return PNG.sync.write(png);
+  }
 
   drawText(png, 'GITSNAKE', 60, 48, 5, C.text);
   const nameEnd = drawText(png, name, 60, 108, 4, C.accent);
