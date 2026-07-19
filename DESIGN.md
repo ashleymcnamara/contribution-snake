@@ -4,7 +4,7 @@ description: A living GitHub contribution graph shaped into a playful, replayabl
 colors:
   contribution-green: "#39d353"
   contribution-green-deep: "#238636"
-  contribution-green-hover: "#2ea043"
+  contribution-green-hover: "#1f7a30"
   contribution-green-light: "#1a7f37"
   contribution-level-1: "#0e4429"
   contribution-level-2: "#006d32"
@@ -133,7 +133,7 @@ The palette is GitHub-native and state-driven: Canvas Black and tonal graph surf
 
 - **Contribution Green:** The brightest contribution cell, snake head, progress, selected state, and successful outcome.
 - **Contribution Green Deep:** Primary button fill in dark mode; confident without competing with the live board.
-- **Contribution Green Hover:** The single brighter action state for primary controls.
+- **Contribution Green Hover:** The darker AA-compliant action state for primary controls.
 - **Contribution Green Light:** The accessible primary action and selection color on light surfaces.
 - **Contribution Levels 1–3:** The body and contribution-density ramp. Preserve order and perceptual progression.
 
@@ -204,6 +204,7 @@ Components are compact, familiar, and quietly tactile. Six- to eight-pixel round
 - **Hover / Focus:** Hover shifts to Contribution Green Hover. Keyboard focus uses a 2px Focus Blue outline with 2px offset. Active feedback scales to 97%; icon controls scale to 90%.
 - **Secondary:** Graph Surface with Ink text and a one-pixel Graph Border. Hover uses the border tone as fill.
 - **Ghost:** Linklike actions use muted text, no container, and Contribution Green only on hover or focus.
+- **Semantics:** Gameplay actions use native buttons, and replay seeking uses a native range control so pointer, touch, keyboard, and assistive input share one behavior.
 
 ### Chips
 
@@ -245,6 +246,7 @@ Components are compact, familiar, and quietly tactile. Six- to eight-pixel round
 - Full-viewport overlays provide start, pause, results, progression, and standings states.
 - The background uses a high-opacity Canvas tone with only a subtle 2px blur; this is functional separation, not decorative glass.
 - Content centers when short and top-aligns naturally when it needs to scroll.
+- Covered headers leave the focus order, and panel content always stacks above background chrome.
 
 ## Do's and Don'ts
 

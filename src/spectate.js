@@ -1,6 +1,6 @@
 // Spectate mode: play back a recorded run (from the server or localStorage) by
 // re-simulating it in a fresh deterministic game. Because the core is
-// deterministic, click-to-seek is just a re-run from step 0 to the target step.
+// deterministic, seeking is just a re-run from step 0 to the target step.
 // All shared game state lives on the ctx passed in by main; the only state this
 // module owns is where to return to and who was last watched.
 import { createGame, queueInput, step, boardSize } from './game/core.js';
@@ -17,6 +17,17 @@ let spectReturn = 'leaderboard'; // 'leaderboard' | 'start' | 'share'
 let lastWatched = null; // { name, score } when arriving via a share link
 let clipRec = null; // in-flight replay→WebM recording, or null (see toggleClip)
 let spectateLoadVersion = 0;
+
+function setSpectProgress(progress) {
+  const normalized = Math.max(0, Math.min(1, progress));
+  const bar = $('spect-bar');
+  const percent = Math.round(normalized * 100);
+  if (bar.value !== String(percent)) bar.value = String(percent);
+  if (bar.getAttribute('aria-valuetext') !== `${percent}%`) {
+    bar.setAttribute('aria-valuetext', `${percent}%`);
+  }
+  bar.style.setProperty('--spect-progress', `${percent}%`);
+}
 
 export function cancelSpectateLoad() {
   spectateLoadVersion++;
@@ -38,7 +49,7 @@ export function beginSpectate(ctx, data, { label, returnTo = 'leaderboard' } = {
   spectReturn = returnTo;
   ctx.spectSpeed = 1;
   $('btn-spect-speed').textContent = '1×';
-  $('spect-fill').style.transform = 'scaleX(0)';
+  setSpectProgress(0);
   resetClipButton();
   $('btn-spect-clip').hidden = !clipSupported();
   ctx.mode = data.mode;
@@ -99,12 +110,11 @@ function updateSpectProgress(ctx) {
   const inputs = ctx.spect.inputs;
   const lastStep = inputs.length ? inputs[inputs.length - 1].s : 0;
   const progress = lastStep ? Math.min(1, ctx.game.stepCount / lastStep) : 1;
-  $('spect-fill').style.transform = `scaleX(${progress})`;
+  setSpectProgress(progress);
 }
 
-// Click-to-seek: the core is deterministic, so jumping to any point is just
-// re-simulating from step 0 (milliseconds even for long runs) and resuming
-// playback from there.
+// The range control re-runs the deterministic core from step 0 to the target
+// (milliseconds even for long runs), then resumes playback from there.
 export function seekSpectate(ctx, fraction) {
   if (!ctx.spect) return;
   const inputs = ctx.spect.inputs;
@@ -162,7 +172,7 @@ function spectateTick(ctx, now) {
 
   if (!ctx.game.alive || ctx.game.won) {
     // Hold the final frame briefly, then return to the leaderboard.
-    $('spect-fill').style.transform = 'scaleX(1)';
+    setSpectProgress(1);
     draw(ctx.renderer, ctx.game, null, 1, {});
     setTimeout(() => { if (ctx.state === 'spectate-done') exitSpectate(ctx); }, 900);
     ctx.state = 'spectate-done';

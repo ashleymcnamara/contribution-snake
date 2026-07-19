@@ -99,7 +99,8 @@
       </h1>
       <div class="header-actions">
         <button class="icon-btn" id="sound-btn" type="button" aria-label="Toggle sound"></button>
-        <button class="icon-btn" id="palette-btn" type="button" aria-label="Toggle colorblind palette"></button>
+        <button class="icon-btn" id="palette-btn" type="button"
+                aria-label="Colorblind palette" aria-pressed="false"></button>
         <button class="icon-btn" id="theme-btn" type="button" aria-label="Toggle theme"></button>
       </div>
     </div>
@@ -274,7 +275,8 @@
     </div>
 
     <div class="spectate-cta" id="spectate-cta" hidden>
-      <div class="spect-bar" id="spect-bar" aria-hidden="true" title="Click to seek"><div class="spect-bar-fill" id="spect-fill"></div></div>
+      <input class="spect-bar" id="spect-bar" type="range" min="0" max="100" value="0"
+             aria-label="Replay position" aria-valuetext="0%">
       <div class="spect-actions">
         <button class="btn btn-secondary" id="btn-spect-speed" type="button"
                 aria-label="Playback speed">1×</button>
@@ -305,14 +307,14 @@
 
     <div class="touch-controls" id="touch-controls" hidden>
       <div class="touch-row">
-        <div class="touch-btn" style="visibility:hidden"></div>
-        <div class="touch-btn" data-dir="0" aria-label="Up"></div>
-        <div class="touch-btn" style="visibility:hidden"></div>
+        <span class="touch-btn" style="visibility:hidden" aria-hidden="true"></span>
+        <button class="touch-btn" type="button" data-dir="0" aria-label="Up"></button>
+        <span class="touch-btn" style="visibility:hidden" aria-hidden="true"></span>
       </div>
       <div class="touch-row">
-        <div class="touch-btn" data-dir="3" aria-label="Left"></div>
-        <div class="touch-btn" data-dir="2" aria-label="Down"></div>
-        <div class="touch-btn" data-dir="1" aria-label="Right"></div>
+        <button class="touch-btn" type="button" data-dir="3" aria-label="Left"></button>
+        <button class="touch-btn" type="button" data-dir="2" aria-label="Down"></button>
+        <button class="touch-btn" type="button" data-dir="1" aria-label="Right"></button>
       </div>
     </div>
   </div>
