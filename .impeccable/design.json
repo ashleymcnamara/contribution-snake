@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-17T21:10:00Z",
+  "generatedAt": "2026-07-19T15:56:52Z",
   "title": "Design System: GitSnake",
   "extensions": {
     "colorMeta": {
@@ -188,6 +188,11 @@
         "name": "The Flat-at-Rest Rule",
         "body": "Persistent surfaces never use ambient drop shadows.",
         "section": "elevation"
+      },
+      {
+        "name": "The Stable Utility Row Rule",
+        "body": "Home utilities stay to one row: Leaderboard, Progress, and Locker. Progress groups local stats, achievements, and the best replay.",
+        "section": "components"
       }
     ],
     "dos": [

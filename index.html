@@ -205,20 +205,30 @@
         <div class="menu-links" id="menu-links">
           <button class="linklike" id="btn-leaderboard">Leaderboard</button>
           <button class="linklike" id="btn-watch-shared" hidden>Watch again</button>
-          <button class="linklike" id="btn-watch-best" hidden>Watch your best run</button>
-          <button class="linklike" id="btn-stats" hidden>Stats</button>
-          <button class="linklike" id="btn-achievements" hidden>Achievements</button>
+          <button class="linklike" id="btn-progress" hidden>Progress</button>
           <button class="linklike" id="btn-locker">Locker</button>
           <button class="linklike" id="btn-install" hidden>Install app</button>
         </div>
 
-        <!-- Stats panel -->
-        <div class="stats-panel" id="stats-panel" hidden></div>
-        <button class="btn btn-secondary" id="stats-back" hidden>Back</button>
-
-        <!-- Achievements panel -->
-        <div class="achievements-panel" id="achievements-panel" hidden></div>
-        <button class="btn btn-secondary" id="achievements-back" hidden>Back</button>
+        <!-- Progress panel -->
+        <div class="progress-panel" id="progress-panel" hidden>
+          <button class="btn btn-secondary progress-replay" id="btn-progress-watch" type="button" hidden>
+            <span class="progress-replay-label">Watch your best run</span>
+            <span class="progress-replay-meta" id="progress-best-meta"></span>
+          </button>
+          <section class="progress-section" aria-labelledby="progress-stats-heading">
+            <h2 class="progress-heading" id="progress-stats-heading">Stats</h2>
+            <div class="stats-panel" id="stats-panel"></div>
+          </section>
+          <section class="progress-section" aria-labelledby="progress-achievements-heading">
+            <div class="progress-heading-row">
+              <h2 class="progress-heading" id="progress-achievements-heading">Achievements</h2>
+              <span class="progress-count" id="progress-achievements-count"></span>
+            </div>
+            <div class="achievements-panel" id="achievements-panel"></div>
+          </section>
+        </div>
+        <button class="btn btn-secondary" id="progress-back" hidden>Back</button>
 
         <!-- Cosmetics panel -->
         <div class="cosmetics-panel" id="cosmetics-panel" hidden></div>
