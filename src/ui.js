@@ -51,6 +51,19 @@ const OVERLAY_SECTIONS = ['mode-buttons', 'user-row', 'btn-leaderboard', 'btn-wa
   'progress-panel', 'progress-back', 'cosmetics-panel', 'cosmetics-back',
   'btn-resume', 'submit-row', 'daily-share-preview', 'over-actions', 'share-row',
   'lb-tabs', 'leaderboard', 'over-stats'];
+const compactOverlayQuery = window.matchMedia('(max-width: 640px), (max-height: 640px)');
+
+function syncHeaderInteractivity() {
+  const header = document.querySelector('.header');
+  const overlay = $('overlay');
+  if (!header || !overlay) return;
+  const overlayVisible = getComputedStyle(overlay).display !== 'none';
+  const exposedHomeHeader = overlay.dataset.view === 'home' && !compactOverlayQuery.matches;
+  header.inert = overlayVisible && !exposedHomeHeader;
+}
+
+compactOverlayQuery.addEventListener('change', syncHeaderInteractivity);
+syncHeaderInteractivity();
 
 export function showOverlay(ctx, title, sub, sections = []) {
   clearCountdown(); // cancel any pending resume countdown if we navigate away
@@ -60,12 +73,11 @@ export function showOverlay(ctx, title, sub, sections = []) {
     ? 'classic'
     : sections.includes('mode-buttons') ? 'home' : 'panel';
   document.body.dataset.overlayView = overlay.dataset.view;
-  const header = document.querySelector('.header');
-  if (header) header.inert = overlay.dataset.view === 'classic';
   $('overlay-title').textContent = title;
   $('overlay-sub').textContent = sub;
   for (const id of OVERLAY_SECTIONS) $(id).hidden = !sections.includes(id);
   overlay.style.display = 'flex';
+  syncHeaderInteractivity();
   overlay.scrollTop = 0;
   // The touch d-pad is only useful during active play — keep it out of the way
   // (and out of the layout, so the board can reclaim the space) on every menu,
@@ -80,8 +92,7 @@ export function showOverlay(ctx, title, sub, sections = []) {
 export function hideOverlay() {
   $('overlay').style.display = 'none';
   delete document.body.dataset.overlayView;
-  const header = document.querySelector('.header');
-  if (header) header.inert = false;
+  syncHeaderInteractivity();
 }
 
 // Show/hide the on-screen d-pad and re-fit the board to the space that leaves.

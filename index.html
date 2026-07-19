@@ -41,20 +41,28 @@
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="GitSnake">
+  <meta property="og:locale" content="en_US">
   <meta property="og:title" content="GitSnake">
   <meta property="og:description" content="A snake game themed around the GitHub contribution graph. Play your real contributions, race the daily challenge, and climb the leaderboard.">
   <meta property="og:url" content="https://yetanothersnake.dev/">
-  <meta property="og:image" content="https://yetanothersnake.dev/og-image.png">
+  <meta property="og:image" content="https://yetanothersnake.dev/og-image.png?v=20260719">
+  <meta property="og:image:secure_url" content="https://yetanothersnake.dev/og-image.png?v=20260719">
+  <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="GitSnake contribution-grid game board with a bright green snake">
 
   <!-- Twitter -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="GitSnake">
   <meta name="twitter:description" content="A snake game themed around the GitHub contribution graph. Play your real contributions, race the daily challenge, and climb the leaderboard.">
-  <meta name="twitter:image" content="https://yetanothersnake.dev/og-image.png">
+  <meta name="twitter:url" content="https://yetanothersnake.dev/">
+  <meta name="twitter:image" content="https://yetanothersnake.dev/og-image.png?v=20260719">
+  <meta name="twitter:image:alt" content="GitSnake contribution-grid game board with a bright green snake">
 
   <link rel="canonical" href="https://yetanothersnake.dev/">
+  <link rel="image_src" href="https://yetanothersnake.dev/og-image.png?v=20260719">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
@@ -99,7 +107,8 @@
       </h1>
       <div class="header-actions">
         <button class="icon-btn" id="sound-btn" type="button" aria-label="Toggle sound"></button>
-        <button class="icon-btn" id="palette-btn" type="button" aria-label="Toggle colorblind palette"></button>
+        <button class="icon-btn" id="palette-btn" type="button"
+                aria-label="Colorblind palette" aria-pressed="false"></button>
         <button class="icon-btn" id="theme-btn" type="button" aria-label="Toggle theme"></button>
       </div>
     </div>
@@ -274,7 +283,8 @@
     </div>
 
     <div class="spectate-cta" id="spectate-cta" hidden>
-      <div class="spect-bar" id="spect-bar" aria-hidden="true" title="Click to seek"><div class="spect-bar-fill" id="spect-fill"></div></div>
+      <input class="spect-bar" id="spect-bar" type="range" min="0" max="100" value="0"
+             aria-label="Replay position" aria-valuetext="0%">
       <div class="spect-actions">
         <button class="btn btn-secondary" id="btn-spect-speed" type="button"
                 aria-label="Playback speed">1×</button>
@@ -305,14 +315,14 @@
 
     <div class="touch-controls" id="touch-controls" hidden>
       <div class="touch-row">
-        <div class="touch-btn" style="visibility:hidden"></div>
-        <div class="touch-btn" data-dir="0" aria-label="Up"></div>
-        <div class="touch-btn" style="visibility:hidden"></div>
+        <span class="touch-btn" style="visibility:hidden" aria-hidden="true"></span>
+        <button class="touch-btn" type="button" data-dir="0" aria-label="Up"></button>
+        <span class="touch-btn" style="visibility:hidden" aria-hidden="true"></span>
       </div>
       <div class="touch-row">
-        <div class="touch-btn" data-dir="3" aria-label="Left"></div>
-        <div class="touch-btn" data-dir="2" aria-label="Down"></div>
-        <div class="touch-btn" data-dir="1" aria-label="Right"></div>
+        <button class="touch-btn" type="button" data-dir="3" aria-label="Left"></button>
+        <button class="touch-btn" type="button" data-dir="2" aria-label="Down"></button>
+        <button class="touch-btn" type="button" data-dir="1" aria-label="Right"></button>
       </div>
     </div>
   </div>

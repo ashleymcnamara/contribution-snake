@@ -48,7 +48,7 @@ html, body { touch-action: manipulation; }
   --level-3: #26a641;
   --level-4: #39d353;
   --btn-bg: #238636;
-  --btn-bg-hover: #2ea043;
+  --btn-bg-hover: #1f7a30;
   --focus: #58a6ff;
   --share-bonus: #e3b341;
   --accent-soft: color-mix(in srgb, var(--accent) 8%, var(--surface));
@@ -106,7 +106,8 @@ body {
   z-index: var(--z-header);
 }
 
-body[data-overlay-view="classic"] .header {
+body[data-overlay-view="classic"] .header,
+body[data-overlay-view="panel"] .header {
   z-index: 0;
 }
 
@@ -362,27 +363,63 @@ canvas {
   justify-content: center;
 }
 
-/* Replay progress: approximate (based on the last logged input), but plenty
-   to show how far into the run the playback is. Clickable to seek — the core
-   is deterministic, so seeking just re-simulates from the start. */
+/* Replay progress uses a native range so seeking works with pointer, touch,
+   keyboard, switch control, and screen readers. */
 .spect-bar {
+  --spect-progress: 0%;
+  appearance: none;
+  -webkit-appearance: none;
   width: 100%;
-  height: 8px;
-  border-radius: 4px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  overflow: hidden;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
   cursor: pointer;
 }
 
-.spect-bar-fill {
-  height: 100%;
-  width: 100%;
-  background: var(--accent);
+.spect-bar::-webkit-slider-runnable-track {
+  height: 8px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-compact);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 0.15s linear;
+  background: linear-gradient(to right,
+    var(--accent) 0 var(--spect-progress),
+    var(--surface) var(--spect-progress) 100%);
+}
+
+.spect-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.spect-bar::-moz-range-track {
+  height: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-compact);
+  background: var(--surface);
+}
+
+.spect-bar::-moz-range-progress {
+  height: 6px;
+  border-radius: var(--radius-compact);
+  background: var(--accent);
+}
+
+.spect-bar::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.spect-bar:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .legend {
@@ -1129,7 +1166,10 @@ canvas {
   background: color-mix(in srgb, var(--accent) 18%, var(--surface));
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
-.achv.locked { opacity: 0.6; }
+.achv.locked .achv-badge,
+.achv.locked .achv-progress-track {
+  opacity: 0.65;
+}
 
 @media (max-width: 420px) {
   .progress-panel { width: min(340px, 90vw); }
@@ -1498,6 +1538,7 @@ canvas {
 }
 
 .lb-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1540,10 +1581,28 @@ canvas {
 }
 
 .lb-row.watchable { cursor: pointer; }
-.lb-row.watchable:hover,
-.lb-row.watchable:focus-visible {
+.lb-row:has(.lb-watch-target:hover),
+.lb-row:has(.lb-watch-target:focus-visible) {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
-  outline: none;
+}
+.lb-row:has(.lb-watch-target:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+
+.lb-watch-target {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.lb-watch-target:focus { outline: none; }
+.lb-row > :not(.lb-watch-target) {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
 }
 
 .lb-watch {
@@ -1553,6 +1612,7 @@ canvas {
 
 /* "Race this run" button inside a daily leaderboard row. */
 .lb-race {
+  z-index: 2;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -1565,11 +1625,17 @@ canvas {
   background: none;
   color: var(--text-muted);
   cursor: pointer;
+  pointer-events: auto;
 }
-.lb-race:hover, .lb-race:focus-visible {
+.lb-race:hover {
   color: var(--accent);
   border-color: var(--accent);
-  outline: none;
+}
+.lb-race:focus-visible {
+  color: var(--accent);
+  border-color: var(--accent);
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 .lb-race svg { width: 12px; height: 12px; }
 
@@ -1599,6 +1665,7 @@ canvas {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  padding: 0;
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
@@ -1606,6 +1673,10 @@ canvas {
 }
 
 .touch-btn:active { background: var(--border); transform: scale(0.92); }
+.touch-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 
 .touch-row {
   display: flex;
@@ -1626,6 +1697,18 @@ canvas {
     align-items: center;
     min-height: 44px;
   }
+  .variant-details summary,
+  .variant-toggle {
+    min-height: 44px;
+  }
+  .variant-details summary {
+    display: flex;
+    align-items: center;
+  }
+  .variant-toggle { padding-inline: 6px; }
+  .spect-bar { height: 44px; }
+  .lb-row { min-height: 44px; }
+  .lb-race { width: 44px; height: 44px; }
 }
 
 /* Landscape phones are too short to stack a board and a d-pad. Float the d-pad

@@ -1271,12 +1271,15 @@ async function renderLeaderboard(lbMode, dailyDay = null) {
     const showWhere = lbMode === 'all';
     const myName = localStorage.getItem('gh-snake-name');
     el.innerHTML = entries.map((e, i) => `
-      <div class="lb-row${e.name === myName ? ' me' : ''}${e.replayId ? ' watchable' : ''}"
-           ${e.replayId ? `data-replay="${escapeHtml(e.replayId)}" role="button" tabindex="0" title="Watch this run"` : ''}>
+      <div class="lb-row${e.name === myName ? ' me' : ''}${e.replayId ? ' watchable' : ''}">
         <span class="lb-rank">${i + 1}</span>
         <span class="lb-name">${escapeHtml(e.name)}</span>
         ${showWhere ? `<span class="lb-where">${escapeHtml(lbWhere(e))}</span>` : ''}
         <span class="lb-score">${e.score}</span>
+        ${e.replayId ? `<button class="lb-watch-target" type="button"
+            data-replay="${escapeHtml(e.replayId)}"
+            aria-label="Watch ${escapeHtml(e.name)}'s ${e.score}-point run"
+            title="Watch this run"></button>` : ''}
         ${e.replayId && raceable ? `<button class="lb-race" type="button" data-race="${escapeHtml(e.replayId)}"
             title="Race this run" aria-label="Race ${escapeHtml(e.name)}'s run">${icons.race}</button>` : ''}
         ${e.replayId ? `<span class="lb-watch" aria-hidden="true">${icons.play}</span>` : ''}
@@ -1713,8 +1716,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.querySelectorAll('.touch-btn[data-dir]').forEach((btn) => {
-  btn.addEventListener('touchstart', (e) => {
-    e.preventDefault();
+  btn.addEventListener('click', () => {
     if (state === 'resuming') skipCountdown(); // d-pad also skips the 3-2-1
     if (state === 'playing') {
       audio.unlock();
@@ -1724,7 +1726,7 @@ document.querySelectorAll('.touch-btn[data-dir]').forEach((btn) => {
         navigator.vibrate(8);
       }
     }
-  }, { passive: false });
+  });
 });
 
 // Swipe to steer, tap to pause — directly on the board. Steering triggers on
@@ -1872,14 +1874,15 @@ $('btn-spect-speed').addEventListener('click', () => {
   $('btn-spect-speed').textContent = `${spectSpeed}×`;
 });
 $('btn-spect-clip').addEventListener('click', () => toggleClip(ctx));
-$('spect-bar').addEventListener('click', (e) => {
+$('spect-bar').addEventListener('change', (e) => {
   if (state !== 'spectating' && state !== 'spectate-done') return;
-  const rect = e.currentTarget.getBoundingClientRect();
-  seekSpectate(ctx, (e.clientX - rect.left) / rect.width);
+  const fraction = Number(e.currentTarget.value) / Number(e.currentTarget.max);
+  seekSpectate(ctx, fraction);
+  announce(`Replay position ${Math.round(fraction * 100)} percent.`);
 });
 
-// Click (or keyboard-activate) a leaderboard row to watch that run; the race
-// button inside a row starts a live run against it instead.
+// Watch and Race are separate native buttons. The Watch button stretches over
+// the row visually, while Race remains an independent control above it.
 $('leaderboard').addEventListener('click', (e) => {
   const race = e.target.closest('[data-race]');
   if (race) {
@@ -1887,14 +1890,8 @@ $('leaderboard').addEventListener('click', (e) => {
     startRun('daily', { raceReplayId: race.dataset.race });
     return;
   }
-  const row = e.target.closest('[data-replay]');
-  if (row) watchReplay(row.dataset.replay);
-});
-$('leaderboard').addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter' && e.key !== ' ') return;
-  if (e.target.closest('[data-race]')) return; // native button handles it
-  const row = e.target.closest('[data-replay]');
-  if (row) { e.preventDefault(); watchReplay(row.dataset.replay); }
+  const watch = e.target.closest('[data-replay]');
+  if (watch) watchReplay(watch.dataset.replay);
 });
 
 // Auto-pause when the tab loses focus — no unfair deaths in the background.
@@ -1934,11 +1931,16 @@ const THEME_LABELS = {
   auto: 'Theme: auto (follows system)', dark: 'Theme: dark', light: 'Theme: light',
 };
 
+function syncPaletteButton() {
+  $('palette-btn').setAttribute('aria-pressed', palette === 'blue' ? 'true' : 'false');
+}
+
 function refreshTheme() {
   theme = applyTheme(themeSetting, palette);
   renderer.theme = theme;
   $('theme-btn').innerHTML = THEME_ICONS[themeSetting];
   $('theme-btn').setAttribute('aria-label', THEME_LABELS[themeSetting]);
+  syncPaletteButton();
   if (game && state !== 'playing' && state !== 'spectating') {
     draw(renderer, game, null, 1, { monthLabels, ghosts });
   }
@@ -2036,6 +2038,7 @@ function cancelPendingLoads() {
   $('theme-btn').innerHTML = THEME_ICONS[themeSetting];
   $('theme-btn').setAttribute('aria-label', THEME_LABELS[themeSetting]);
   $('palette-btn').innerHTML = icons.palette;
+  syncPaletteButton();
   $('sound-btn').innerHTML = audio.isMuted() ? icons.volumeOff : icons.volumeOn;
   $('share-native').innerHTML = icons.share;
   $('share-x').innerHTML = icons.x;

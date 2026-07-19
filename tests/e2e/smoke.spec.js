@@ -3,24 +3,73 @@
 // keyboard input — click Classic, wait for Game Over, submit, verify.
 import { test, expect } from '@playwright/test';
 
+async function contrastRatio(page, selector) {
+  return page.locator(selector).first().evaluate((element) => {
+    const channels = (value) => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const luminance = (value) => {
+      const [r, g, b] = channels(value).map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    let surface = element;
+    let background = 'rgba(0, 0, 0, 0)';
+    while (surface) {
+      background = getComputedStyle(surface).backgroundColor;
+      if (!background.endsWith(', 0)')) break;
+      surface = surface.parentElement;
+    }
+    const foregroundLuminance = luminance(getComputedStyle(element).color);
+    const backgroundLuminance = luminance(background);
+    const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+    const darker = Math.min(foregroundLuminance, backgroundLuminance);
+    return (lighter + 0.05) / (darker + 0.05);
+  });
+}
+
 async function startClassic(page) {
   await page.click('#btn-classic');
   await expect(page.locator('#overlay-title')).toHaveText('Classic');
   await page.click('#btn-endless');
 }
 
+async function expectRunOver(page) {
+  await expect(page.locator('#overlay-title'))
+    .toHaveText(/^(Game Over|New personal best!)$/, { timeout: 20000 });
+}
+
 async function submitClassicAndOpenLeaderboard(page, name) {
   await startClassic(page);
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await page.fill('#name-input', name);
   await page.click('#btn-submit');
   await expect(page.locator('#overlay-sub')).toContainText('Verified', { timeout: 10000 });
   const row = page.locator('.lb-row.watchable').filter({ hasText: name }).first();
-  await row.click();
+  await row.locator('.lb-watch-target').click();
   await expect(page.locator('#board-label')).toContainText('Watching', { timeout: 5000 });
   await page.keyboard.press('Escape');
   await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
 }
+
+test('homepage exposes a crawlable large social cover', async ({ page, request }) => {
+  await page.goto('/');
+  const cardUrl = 'https://yetanothersnake.dev/og-image.png?v=20260719';
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', cardUrl);
+  await expect(page.locator('meta[property="og:image:type"]')).toHaveAttribute('content', 'image/png');
+  await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute('content', '1200');
+  await expect(page.locator('meta[property="og:image:height"]')).toHaveAttribute('content', '630');
+  await expect(page.locator('meta[name="twitter:card"]'))
+    .toHaveAttribute('content', 'summary_large_image');
+  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute('content', cardUrl);
+
+  const image = await request.get('/og-image.png?v=20260719');
+  expect(image.ok()).toBe(true);
+  expect(image.headers()['content-type']).toBe('image/png');
+  expect((await image.body()).length).toBeGreaterThan(10000);
+});
 
 test('classic run: play, die, submit, verified standings entry', async ({ page }) => {
   await page.goto('/');
@@ -28,7 +77,7 @@ test('classic run: play, die, submit, verified standings entry', async ({ page }
 
   await startClassic(page);
   // Unattended, the snake hits the wall in ~2s; death animation follows.
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
 
   await page.fill('#name-input', 'e2e-bot');
   await page.click('#btn-submit');
@@ -37,8 +86,11 @@ test('classic run: play, die, submit, verified standings entry', async ({ page }
   // The submitted run appears on the leaderboard and is watchable.
   const row = page.locator('.lb-row.watchable').first();
   await expect(row).toBeVisible();
-  await row.click();
+  await expect(row).not.toHaveAttribute('role', 'button');
+  await expect(row.locator('button button')).toHaveCount(0);
+  await row.locator('.lb-watch-target').click();
   await expect(page.locator('#board-label')).toContainText('Watching', { timeout: 5000 });
+  await expect(page.locator('#spect-bar')).toHaveAttribute('type', 'range');
 
   // Esc exits spectate back to the leaderboard screen, which opens on the
   // all-time board — the run shows there, tagged with the mode it came from.
@@ -60,7 +112,7 @@ test('Daily result shares a scorecard and opens as a ghost challenge', async ({ 
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
   await page.click('#btn-daily');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
 
   const preview = page.locator('#daily-share-preview');
   await expect(preview).toBeVisible();
@@ -111,7 +163,7 @@ test('Daily result shares a scorecard and opens as a ghost challenge', async ({ 
   });
   await page.click('#btn-again');
   await expect(page.locator('#overlay')).toBeHidden();
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await expect(preview).toContainText('Practice scorecard');
   await expect(preview).not.toContainText('Submit your score to add rank');
 
@@ -138,7 +190,7 @@ test('Daily result shares a scorecard and opens as a ghost challenge', async ({ 
 test('late score verification does not overwrite a newer screen', async ({ page }) => {
   await page.goto('/');
   await page.click('#btn-daily');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
 
   await page.route('**/api/scores', async (route) => {
     const response = await route.fetch();
@@ -165,7 +217,7 @@ test('late Daily verification turns a newer result into practice', async ({ page
 
   await page.goto('/');
   await page.click('#btn-daily');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await page.route('**/api/scores', async (route) => {
     const response = await route.fetch();
     markProcessed();
@@ -178,7 +230,7 @@ test('late Daily verification turns a newer result into practice', async ({ page
   await scoreProcessed;
   await page.click('#btn-again');
   await expect(page.locator('#overlay')).toBeHidden();
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await expect(page.locator('#submit-row')).toBeVisible();
 
   releaseResponse();
@@ -250,13 +302,14 @@ test('late replay hydration does not leave the screen the player chose', async (
   await submitClassicAndOpenLeaderboard(page, 'slow-replay');
 
   const row = page.locator('.lb-row.watchable').filter({ hasText: 'slow-replay' }).first();
-  const replayId = await row.getAttribute('data-replay');
+  const watch = row.locator('.lb-watch-target');
+  const replayId = await watch.getAttribute('data-replay');
   await page.route(`**/api/replay/${replayId}`, async (route) => {
     const response = await route.fetch();
     await new Promise((resolve) => setTimeout(resolve, 600));
     await route.fulfill({ response });
   });
-  await row.click();
+  await watch.click();
   await page.click('#lb-tab-daily');
   await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
   await page.waitForTimeout(800);
@@ -323,6 +376,10 @@ test('offline Classic is explicitly local-only', async ({ page }) => {
 test('theme, palette, and pause controls', async ({ page }) => {
   await page.goto('/');
 
+  await page.hover('#btn-classic');
+  await page.waitForTimeout(200);
+  expect(await contrastRatio(page, '#btn-classic')).toBeGreaterThanOrEqual(4.5);
+
   const initialTheme = await page.evaluate(() => document.documentElement.dataset.theme);
   await page.click('#theme-btn');
   const flippedTheme = await page.evaluate(() => document.documentElement.dataset.theme);
@@ -330,10 +387,14 @@ test('theme, palette, and pause controls', async ({ page }) => {
 
   const greenLevel = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--level-4').trim());
+  await expect(page.locator('#palette-btn')).toHaveAttribute('aria-pressed', 'false');
   await page.click('#palette-btn');
+  await expect(page.locator('#palette-btn')).toHaveAttribute('aria-pressed', 'true');
   const blueLevel = await page.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--level-4').trim());
   expect(blueLevel).not.toBe(greenLevel);
+  expect(await page.locator('.touch-btn[data-dir]').evaluateAll((buttons) =>
+    buttons.map((button) => button.tagName))).toEqual(['BUTTON', 'BUTTON', 'BUTTON', 'BUTTON']);
 
   // Pause and resume mid-game. Starting is async (session fetch) and now opens
   // with a 3-2-1 countdown, so wait for the overlay to hide and the countdown
@@ -384,6 +445,7 @@ test('wrap-walls variant plays unranked and survives the edge', async ({ page })
 });
 
 test('Progress combines stats and the best-run replay after a finished run', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/');
   await startClassic(page);
   await expect(page.locator('#btn-menu')).toBeVisible({ timeout: 20000 });
@@ -400,6 +462,19 @@ test('Progress combines stats and the best-run replay after a finished run', asy
   await expect(page.locator('#overlay-title')).toHaveText('Progress');
   await expect(page.locator('#stats-panel')).toContainText('games played');
   await expect(page.locator('#btn-progress-watch')).toBeVisible();
+  expect(await page.locator('.header').evaluate((header) => header.inert)).toBe(true);
+  const headerObscuresProgress = await page.evaluate(() => {
+    const header = document.querySelector('.header').getBoundingClientRect();
+    const stats = document.querySelector('#stats-panel').getBoundingClientRect();
+    const left = Math.max(header.left, stats.left);
+    const right = Math.min(header.right, stats.right);
+    const top = Math.max(header.top, stats.top);
+    const bottom = Math.min(header.bottom, stats.bottom);
+    if (left >= right || top >= bottom) return false;
+    return Boolean(document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+      ?.closest('.header'));
+  });
+  expect(headerObscuresProgress).toBe(false);
   await page.click('#progress-back');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 });
@@ -419,8 +494,20 @@ test('finishing a first game shows achievement progress inside Progress', async 
   await expect(page.locator('.achv.unlocked').first()).toBeVisible();
   // Locked threshold achievements show progress from lifetime stats (1 game so far).
   await expect(page.locator('#achievements-panel')).toContainText('1/10');
+  const locked = page.locator('.achv.locked').first();
+  await expect(locked).toHaveCSS('opacity', '1');
+  expect(await contrastRatio(page, '.achv.locked .achv-desc')).toBeGreaterThanOrEqual(4.5);
   await page.click('#progress-back');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
+});
+
+test('compact overlays keep covered header controls out of the focus order', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/');
+  expect(await page.locator('.header').evaluate((header) => header.inert)).toBe(true);
+  await page.locator('#overlay-title').focus();
+  await page.keyboard.press('Shift+Tab');
+  expect(await page.evaluate(() => Boolean(document.activeElement.closest('.header')))).toBe(false);
 });
 
 test('Classic hub exposes campaign, Legends archive, and power-ups', async ({ page }) => {
