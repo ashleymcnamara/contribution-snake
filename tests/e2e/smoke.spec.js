@@ -36,9 +36,14 @@ async function startClassic(page) {
   await page.click('#btn-endless');
 }
 
+async function expectRunOver(page) {
+  await expect(page.locator('#overlay-title'))
+    .toHaveText(/^(Game Over|New personal best!)$/, { timeout: 20000 });
+}
+
 async function submitClassicAndOpenLeaderboard(page, name) {
   await startClassic(page);
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await page.fill('#name-input', name);
   await page.click('#btn-submit');
   await expect(page.locator('#overlay-sub')).toContainText('Verified', { timeout: 10000 });
@@ -49,13 +54,30 @@ async function submitClassicAndOpenLeaderboard(page, name) {
   await expect(page.locator('#overlay-title')).toHaveText('Leaderboard');
 }
 
+test('homepage exposes a crawlable large social cover', async ({ page, request }) => {
+  await page.goto('/');
+  const cardUrl = 'https://yetanothersnake.dev/og-image.png?v=20260719';
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', cardUrl);
+  await expect(page.locator('meta[property="og:image:type"]')).toHaveAttribute('content', 'image/png');
+  await expect(page.locator('meta[property="og:image:width"]')).toHaveAttribute('content', '1200');
+  await expect(page.locator('meta[property="og:image:height"]')).toHaveAttribute('content', '630');
+  await expect(page.locator('meta[name="twitter:card"]'))
+    .toHaveAttribute('content', 'summary_large_image');
+  await expect(page.locator('meta[name="twitter:image"]')).toHaveAttribute('content', cardUrl);
+
+  const image = await request.get('/og-image.png?v=20260719');
+  expect(image.ok()).toBe(true);
+  expect(image.headers()['content-type']).toBe('image/png');
+  expect((await image.body()).length).toBeGreaterThan(10000);
+});
+
 test('classic run: play, die, submit, verified standings entry', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 
   await startClassic(page);
   // Unattended, the snake hits the wall in ~2s; death animation follows.
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
 
   await page.fill('#name-input', 'e2e-bot');
   await page.click('#btn-submit');
@@ -90,7 +112,7 @@ test('Daily result shares a scorecard and opens as a ghost challenge', async ({ 
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
   await page.click('#btn-daily');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
 
   const preview = page.locator('#daily-share-preview');
   await expect(preview).toBeVisible();
@@ -141,7 +163,7 @@ test('Daily result shares a scorecard and opens as a ghost challenge', async ({ 
   });
   await page.click('#btn-again');
   await expect(page.locator('#overlay')).toBeHidden();
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await expect(preview).toContainText('Practice scorecard');
   await expect(preview).not.toContainText('Submit your score to add rank');
 
@@ -168,7 +190,7 @@ test('Daily result shares a scorecard and opens as a ghost challenge', async ({ 
 test('late score verification does not overwrite a newer screen', async ({ page }) => {
   await page.goto('/');
   await page.click('#btn-daily');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
 
   await page.route('**/api/scores', async (route) => {
     const response = await route.fetch();
@@ -195,7 +217,7 @@ test('late Daily verification turns a newer result into practice', async ({ page
 
   await page.goto('/');
   await page.click('#btn-daily');
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await page.route('**/api/scores', async (route) => {
     const response = await route.fetch();
     markProcessed();
@@ -208,7 +230,7 @@ test('late Daily verification turns a newer result into practice', async ({ page
   await scoreProcessed;
   await page.click('#btn-again');
   await expect(page.locator('#overlay')).toBeHidden();
-  await expect(page.locator('#overlay-title')).toHaveText('Game Over', { timeout: 20000 });
+  await expectRunOver(page);
   await expect(page.locator('#submit-row')).toBeVisible();
 
   releaseResponse();
