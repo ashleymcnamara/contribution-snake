@@ -390,13 +390,9 @@ function showStartScreen() {
     'GitSnake',
     startSub,
     ['mode-buttons', ...(serverOk ? ['btn-leaderboard'] : []),
-      ...(localBest ? ['btn-watch-best'] : []),
-      ...(stats.games > 0 ? ['btn-stats', 'btn-achievements'] : []), 'btn-locker',
+      ...((localBest || stats.games > 0) ? ['btn-progress'] : []), 'btn-locker',
       ...(installPrompt ? ['btn-install'] : [])]
   );
-  if (localBest) {
-    $('btn-watch-best').textContent = `Watch your best run (${localBest.score} pts)`;
-  }
   $('run-brief').hidden = true;
   startDemo();
   syncServerAvailability();
@@ -1325,10 +1321,11 @@ function showLeaderboardScreen(initialTab = 'all') {
   renderLeaderboard(initialTab);
 }
 
-function showStatsScreen() {
+function showProgressScreen() {
   cancelPendingLoads();
   const s = loadStats();
   const progress = loadProgress();
+  const localBest = bestLocalRun();
   const avg = s.games ? Math.round(s.totalScore / s.games) : 0;
   const blocks = [
     [s.games, 'games played'],
@@ -1345,19 +1342,13 @@ function showStatsScreen() {
       <div class="stat-number">${n}</div>
       <div class="stat-name">${label}</div>
     </div>`).join('');
-  showOverlay(ctx, 'Your stats', 'Stored locally in this browser.', ['stats-panel', 'stats-back']);
-}
-
-function showAchievementsScreen() {
-  cancelPendingLoads();
   const unlocked = loadUnlocked();
-  const stats = loadStats();
   $('achievements-panel').innerHTML = ACHIEVEMENTS.map((a) => {
     const got = unlocked.has(a.id);
     // Locked threshold achievements show how close you are.
     let progressHtml = '';
     if (!got && a.progress) {
-      const [now, goal] = a.progress(stats);
+      const [now, goal] = a.progress(s);
       const shown = Math.min(now, goal);
       progressHtml = `
         <div class="achv-progress" aria-label="${shown} of ${goal}">
@@ -1376,8 +1367,14 @@ function showAchievementsScreen() {
       ${got ? `<span class="achv-check" aria-hidden="true">${icons.check}</span>` : ''}
     </div>`;
   }).join('');
-  showOverlay(ctx, 'Achievements', `${unlocked.size} of ${ACHIEVEMENTS.length} unlocked`,
-    ['achievements-panel', 'achievements-back']);
+  $('progress-achievements-count').textContent = `${unlocked.size}/${ACHIEVEMENTS.length} unlocked`;
+  $('btn-progress-watch').hidden = !localBest;
+  if (localBest) {
+    const modeLabel = MODE_LABELS[localBest.mode] || 'Run';
+    $('progress-best-meta').textContent = `${modeLabel} · ${localBest.score} pts`;
+  }
+  showOverlay(ctx, 'Progress', 'Your bests and milestones, stored locally in this browser.',
+    ['progress-panel', 'progress-back']);
 }
 
 // --- graph mode ---
@@ -1837,15 +1834,13 @@ $('lb-tab-graph').addEventListener('click', () => {
   renderLeaderboard('graph');
 });
 $('lb-back').addEventListener('click', showStartScreen);
-$('btn-watch-best').addEventListener('click', watchBestReplay);
 $('btn-watch-shared').addEventListener('click', () => {
   if (sharedReplay) watchReplay(sharedReplay.id, { returnTo: 'share' });
 });
 $('btn-play-own').addEventListener('click', () => exitSpectate(ctx, { toMenu: true }));
-$('btn-stats').addEventListener('click', showStatsScreen);
-$('stats-back').addEventListener('click', showStartScreen);
-$('btn-achievements').addEventListener('click', showAchievementsScreen);
-$('achievements-back').addEventListener('click', showStartScreen);
+$('btn-progress').addEventListener('click', showProgressScreen);
+$('btn-progress-watch').addEventListener('click', watchBestReplay);
+$('progress-back').addEventListener('click', showStartScreen);
 $('btn-locker').addEventListener('click', showCosmeticsScreen);
 $('cosmetics-back').addEventListener('click', showStartScreen);
 $('cosmetics-panel').addEventListener('click', (e) => {

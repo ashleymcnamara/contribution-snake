@@ -220,7 +220,8 @@ test('watching a replay cancels an in-flight Daily startup', async ({ page }) =>
   });
   await page.goto('/');
   await page.click('#btn-daily');
-  await page.click('#btn-watch-best');
+  await page.click('#btn-progress');
+  await page.click('#btn-progress-watch');
   await expect(page.locator('#board-label')).toContainText('Your best classic run');
   await page.waitForTimeout(800);
   await expect(page.locator('#board-label')).toContainText('Your best classic run');
@@ -382,20 +383,28 @@ test('wrap-walls variant plays unranked and survives the edge', async ({ page })
   await expect(page.locator('#overlay')).toBeHidden();
 });
 
-test('stats panel appears after a finished run', async ({ page }) => {
+test('Progress combines stats and the best-run replay after a finished run', async ({ page }) => {
   await page.goto('/');
   await startClassic(page);
   await expect(page.locator('#btn-menu')).toBeVisible({ timeout: 20000 });
 
   await page.click('#btn-menu');
-  await expect(page.locator('#btn-stats')).toBeVisible();
-  await page.click('#btn-stats');
+  await expect(page.locator('#btn-progress')).toBeVisible();
+  await expect(page.locator('#btn-watch-best')).toHaveCount(0);
+  await expect(page.locator('#btn-stats')).toHaveCount(0);
+  await expect(page.locator('#btn-achievements')).toHaveCount(0);
+  await expect(page.locator('#menu-links > button:visible')).toHaveText([
+    'Leaderboard', 'Progress', 'Locker',
+  ]);
+  await page.click('#btn-progress');
+  await expect(page.locator('#overlay-title')).toHaveText('Progress');
   await expect(page.locator('#stats-panel')).toContainText('games played');
-  await page.click('#stats-back');
+  await expect(page.locator('#btn-progress-watch')).toBeVisible();
+  await page.click('#progress-back');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 });
 
-test('finishing a first game unlocks an achievement and opens the panel', async ({ page }) => {
+test('finishing a first game shows achievement progress inside Progress', async ({ page }) => {
   await page.goto('/');
   await startClassic(page);
   await expect(page.locator('#btn-menu')).toBeVisible({ timeout: 20000 });
@@ -404,13 +413,13 @@ test('finishing a first game unlocks an achievement and opens the panel', async 
   await expect(page.locator('.toast')).toContainText('First Bite', { timeout: 5000 });
 
   await page.click('#btn-menu');
-  await page.click('#btn-achievements');
-  await expect(page.locator('#overlay-title')).toHaveText('Achievements');
-  await expect(page.locator('#overlay-sub')).toContainText('unlocked');
+  await page.click('#btn-progress');
+  await expect(page.locator('#overlay-title')).toHaveText('Progress');
+  await expect(page.locator('#progress-achievements-count')).toContainText('unlocked');
   await expect(page.locator('.achv.unlocked').first()).toBeVisible();
   // Locked threshold achievements show progress from lifetime stats (1 game so far).
   await expect(page.locator('#achievements-panel')).toContainText('1/10');
-  await page.click('#achievements-back');
+  await page.click('#progress-back');
   await expect(page.locator('#overlay-title')).toHaveText('GitSnake');
 });
 

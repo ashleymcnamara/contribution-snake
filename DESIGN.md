@@ -230,7 +230,7 @@ Components are compact, familiar, and quietly tactile. Six- to eight-pixel round
 
 - The GitSnake logo is the persistent home action.
 - Mode selection uses one primary choice and restrained secondary choices in a narrow vertical rhythm.
-- Secondary destinations form a lightweight text-action row separated by a single hairline.
+- Secondary destinations form one stable text-action row: Leaderboard, Progress, and Locker. Progress groups local stats, achievements, and the best replay.
 - Leaderboard scopes use familiar segmented buttons with an explicit selected state.
 
 ### Contribution Board
