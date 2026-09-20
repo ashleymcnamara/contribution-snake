@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",
-    "express": "^4.21.2",
+    "express": "^4.22.3",
     "pngjs": "^7.0.0"
   },
   "devDependencies": {
